@@ -27,3 +27,10 @@ sentiment/imdb/multi_domain_sentiment_dataset/processed_stars/kitchen
 /baselines/sst2_bert_mini/
 /baselines/sst2_bert_small/
 /attrs/
+__pycache__
+attrs_test
+test_news_attrs
+baselines
+bert-base-cased-sst
+datasets_ours/sst/dev-small.csv
+datasets_ours/sst/train-small.csv
