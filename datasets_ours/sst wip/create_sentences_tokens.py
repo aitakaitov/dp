@@ -1,8 +1,13 @@
 import json
 import re
 
+#
+#   Creates a file which contains sentences and their respective tokens
+#
 
 def clean(sentence):
+    # The datasetSentences.txt file has '(' and ')' replaced by character sequences
+    # so we sanitize them
     sentence = re.sub('-LRB-', '(', sentence)
     sentence = re.sub('-RRB-', ')', sentence)
     return sentence

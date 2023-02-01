@@ -1,5 +1,9 @@
 import json
 
+#
+#   Creates a join over phrase IDs to connect phrases and their sentiment
+#
+
 
 def create():
     with open('dictionary.txt', 'r', encoding='utf-8') as f:

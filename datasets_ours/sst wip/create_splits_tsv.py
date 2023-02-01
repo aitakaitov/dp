@@ -1,8 +1,14 @@
 import json
 import re
 
+#
+#   Uses the datasetSplit, datasetSentences and phrase_sentiment files to create a set of csv files
+#   that contain the sentence and the label (labels are binary - 0 or 1)
+#
 
 def clean(sentence):
+    # The datasetSentences.txt file has '(' and ')' replaced by character sequences
+    # so we sanitize them
     sentence = re.sub('-LRB-', '(', sentence)
     sentence = re.sub('-RRB-', ')', sentence)
     return sentence
