@@ -6,13 +6,14 @@ import json
 from transformers import AutoTokenizer
 from attribution_methods_custom import gradient_attributions, ig_attributions, sg_attributions
 from models.bert_512 import BertSequenceClassifierNews, ElectraSequenceClassifierNews
-import numpy as np
 from BERT_explainability.modules.BERT.ExplanationGenerator import Generator
 
-from time import perf_counter_ns
 import os
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+CERTAIN_DIR = 'certain'
+UNSURE_DIR = 'unsure'
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--output_dir', default='output_news_attrs', help='Attributions output directory')
@@ -133,168 +134,145 @@ def create_neutral_baseline(sentence):
 
 #   -----------------------------------------------------------------------------------------------
 
-def create_gradient_attributions(sentences, target_indices_list):
+def create_gradient_attributions(sentences, target_indices_list, target_dir=CERTAIN_DIR):
     if PART != 'g_sg20-50' and PART != 'all':
         return
 
-    file = open(OUTPUT_DIR + '/' + method_file_dict['grads'], 'w+', encoding='utf-8')
-    file.write('[\n[\n')
+    file = open(os.path.join(OUTPUT_DIR, target_dir, method_file_dict['grads']), 'w+', encoding='utf-8')
+    file.write('[\n')
 
-    times = []
     for sentence, target_indices in zip(sentences, target_indices_list):
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
         attrs_temp = []
         for target_idx in target_indices:
-            start_time = perf_counter_ns()
             attr = gradient_attributions(input_embeds, attention_mask, target_idx, model)
-            times.append(perf_counter_ns() - start_time)
             attr = torch.squeeze(attr)
             attrs_temp.append(format_attrs(attr, sentence))
 
         file.write(json.dumps(attrs_temp) + ',')
 
     file.seek(file.tell() - 1)
-    file.write('\n]\n,' + json.dumps(float(np.average(times))) + '\n]\n')
+    file.write('\n]')
     file.close()
 
-    file = open(OUTPUT_DIR + '/' + method_file_dict['grads_x_inputs'], 'w+', encoding='utf-8')
-    file.write('[\n[\n')
+    file = open(os.path.join(OUTPUT_DIR, target_dir, method_file_dict['grads_x_inputs']), 'w+', encoding='utf-8')
+    file.write('[\n')
 
-    times = []
     for sentence, target_indices in zip(sentences, target_indices_list):
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
         attrs_temp = []
         for target_idx in target_indices:
-            start_time = perf_counter_ns()
             attr = gradient_attributions(input_embeds, attention_mask, target_idx, model, True)
-            times.append(perf_counter_ns() - start_time)
             attr = torch.squeeze(attr)
             attrs_temp.append(format_attrs(attr, sentence))
 
         file.write(json.dumps(attrs_temp) + ',')
 
     file.seek(file.tell() - 1)
-    file.write('\n]\n,' + json.dumps(float(np.average(times))) + '\n]\n')
+    file.write('\n]')
     file.close()
 
 
-def _do_ig(sentences, target_indices_list, steps, file):
-    file = open(OUTPUT_DIR + '/' + method_file_dict[file], 'w+', encoding='utf-8')
-    file.write('[\n[\n')
+def _do_ig(sentences, target_indices_list, steps, file, target_dir):
+    file = open(os.path.join(OUTPUT_DIR, target_dir, method_file_dict[file]), 'w+', encoding='utf-8')
+    file.write('[\n')
 
-    times = []
     for sentence, target_indices in zip(sentences, target_indices_list):
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
         attrs_temp = []
         for target_idx in target_indices:
-
-            start_time = perf_counter_ns()
             baseline = create_neutral_baseline(sentence)
             attr = ig_attributions(input_embeds, attention_mask, target_idx, baseline, model, steps)
-
-            times.append(perf_counter_ns() - start_time)
             attr = torch.squeeze(attr)
             attrs_temp.append(format_attrs(attr, sentence))
 
         file.write(json.dumps(attrs_temp) + ',')
 
     file.seek(file.tell() - 1)
-    file.write('\n]\n,' + json.dumps(float(np.average(times))) + '\n]\n')
+    file.write('\n]')
     file.close()
 
 
-def create_ig_attributions(sentences, target_indices):
+def create_ig_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
     if PART == 'all':
-        _do_ig(sentences, target_indices, 20, 'ig_20')
-        _do_ig(sentences, target_indices, 50, 'ig_50')
-        _do_ig(sentences, target_indices, 100, 'ig_100')
-        _do_ig(sentences, target_indices, 200, 'ig_200')
+        _do_ig(sentences, target_indices, 20, 'ig_20', target_dir)
+        _do_ig(sentences, target_indices, 50, 'ig_50', target_dir)
+        _do_ig(sentences, target_indices, 100, 'ig_100', target_dir)
+        _do_ig(sentences, target_indices, 200, 'ig_200', target_dir)
     elif PART == 'rp_ig20-50':
-        _do_ig(sentences, target_indices, 20, 'ig_20')
-        _do_ig(sentences, target_indices, 50, 'ig_50')
+        _do_ig(sentences, target_indices, 20, 'ig_20', target_dir)
+        _do_ig(sentences, target_indices, 50, 'ig_50', target_dir)
     elif PART == 'ig100':
-        _do_ig(sentences, target_indices, 100, 'ig_100')
+        _do_ig(sentences, target_indices, 100, 'ig_100', target_dir)
     elif PART == 'ig200':
-        _do_ig(sentences, target_indices, 200, 'ig_200')
+        _do_ig(sentences, target_indices, 200, 'ig_200', target_dir)
 
 
-def _do_sg(sentences, target_indices_list, samples, file):
-    f = open(OUTPUT_DIR + '/' + method_file_dict[file], 'w+', encoding='utf-8')
-    f.write('[\n[\n')
+def _do_sg(sentences, target_indices_list, samples, file, target_dir):
+    f = open(os.path.join(OUTPUT_DIR, target_dir, method_file_dict[file]), 'w+', encoding='utf-8')
+    f.write('[\n')
 
-    f_x_inputs = open(OUTPUT_DIR + '/' + method_file_dict[file + '_x_inputs'], 'w+', encoding='utf-8')
-    f_x_inputs.write('[\n[\n')
+    f_x_inputs = open(os.path.join(OUTPUT_DIR, target_dir, method_file_dict[file + '_x_inputs']), 'w+', encoding='utf-8')
+    f_x_inputs.write('[\n')
 
-    times = []
-    times_x_input = []
     for sentence, target_indices in zip(sentences, target_indices_list):
         inputs_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
         temp_attrs = []
         temp_attrs_x_inputs = []
         for target_idx in target_indices:
-            start_time_1 = perf_counter_ns()
             attr = sg_attributions(inputs_embeds, attention_mask, target_idx, model, samples)
-            end_time_1 = perf_counter_ns()
-            start_time_2 = perf_counter_ns()
             attr_x_input = attr.to(device) * inputs_embeds
-            end_time_2 = perf_counter_ns()
             attr_x_input = torch.squeeze(attr_x_input)
             attr = torch.squeeze(attr)
             temp_attrs.append(format_attrs(attr, sentence))
             temp_attrs_x_inputs.append(format_attrs(attr_x_input, sentence))
 
-            times.append(end_time_1 - start_time_1)
-            times_x_input.append((end_time_1 - start_time_1) + (end_time_2 - start_time_2))
-
         f.write(json.dumps(temp_attrs) + ',')
         f_x_inputs.write(json.dumps(temp_attrs_x_inputs) + ',')
 
     f.seek(f.tell() - 1)
-    f.write('\n]\n,' + json.dumps(float(np.average(times))) + '\n]\n')
+    f.write('\n]')
     f.close()
 
     f_x_inputs.seek(f_x_inputs.tell() - 1)
-    f_x_inputs.write('\n]\n,' + json.dumps(float(np.average(times))) + '\n]\n')
+    f_x_inputs.write('\n]')
     f_x_inputs.close()
 
 
-def create_smoothgrad_attributions(sentences, target_indices):
+def create_smoothgrad_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
     if PART == 'all':
-        _do_sg(sentences, target_indices, 20, 'sg_20')
-        _do_sg(sentences, target_indices, 50, 'sg_50')
-        _do_sg(sentences, target_indices, 100, 'sg_100')
-        _do_sg(sentences, target_indices, 200, 'sg_200')
+        _do_sg(sentences, target_indices, 20, 'sg_20', target_dir)
+        _do_sg(sentences, target_indices, 50, 'sg_50', target_dir)
+        _do_sg(sentences, target_indices, 100, 'sg_100', target_dir)
+        _do_sg(sentences, target_indices, 200, 'sg_200', target_dir)
     elif PART == 'g_sg20-50':
-        _do_sg(sentences, target_indices, 20, 'sg_20')
-        _do_sg(sentences, target_indices, 50, 'sg_50')
+        _do_sg(sentences, target_indices, 20, 'sg_20', target_dir)
+        _do_sg(sentences, target_indices, 50, 'sg_50', target_dir)
     elif PART == 'sg100':
-        _do_sg(sentences, target_indices, 100, 'sg_100')
+        _do_sg(sentences, target_indices, 100, 'sg_100', target_dir)
     elif PART == 'sg200':
-        _do_sg(sentences, target_indices, 200, 'sg_200')
+        _do_sg(sentences, target_indices, 200, 'sg_200', target_dir)
 
 
-def create_relprop_attributions(sentences, target_indices_list):
+def create_relprop_attributions(sentences, target_indices_list, target_dir=CERTAIN_DIR):
     if PART != 'rp_ig20-50' and PART != 'all':
         return
 
-    f = open(OUTPUT_DIR + '/' + method_file_dict['relprop'], 'w+', encoding='utf-8')
-    f.write('[\n[\n')
+    f = open(os.path.join(OUTPUT_DIR, target_dir, method_file_dict['relprop']), 'w+', encoding='utf-8')
+    f.write('[\n')
 
-    times = []
     for sentence, target_indices in zip(sentences, target_indices_list):
         input_ids, attention_mask = prepare_input_ids_and_attention_mask(sentence)
         inputs_embeds, _ = prepare_embeds_and_att_mask(sentence)
         temp_attrs = []
         for target_idx in target_indices:
-            start_time = perf_counter_ns()
             res = relprop_explainer.generate_LRP(input_ids=input_ids, attention_mask=attention_mask, start_layer=0, index=target_idx)
-            times.append(perf_counter_ns() - start_time)
             temp_attrs.append(format_attrs(res, sentence))
 
         f.write(json.dumps(temp_attrs) + ',')
 
     f.seek(f.tell() - 1)
-    f.write('\n]\n,' + json.dumps(float(np.average(times))) + '\n]\n')
+    f.write('\n]')
     f.close()
 
 #   -----------------------------------------------------------------------------------------------
@@ -303,29 +281,52 @@ def create_relprop_attributions(sentences, target_indices_list):
 def main():
     documents, labels = get_data()
 
-    bert_tokens = []
-    target_indices = []
-    valid_documents = []
+    bert_tokens_certain = []
+    target_indices_certain = []
+    valid_documents_certain = []
+
+    bert_tokens_unsure = []
+    target_indices_unsure = []
+    valid_documents_unsure = []
+
     for document, label in zip(documents, labels):
         # first classify the sample
         input_embeds, attention_mask = prepare_embeds_and_att_mask(document)
         res = model(inputs_embeds=input_embeds, attention_mask=attention_mask, inputs_embeds_in_input_ids=False)
         res = list(torch.squeeze(res))
-        target = []
+
+        # check which labels we have predicted correctly
+        target_certain = []
+        target_unsure = []
         for i in range(len(res)):
-            if res[i] >= 0.6 and i in label:
-                target.append(i)
-        if len(target) != 0:
-            target_indices.append(target)
-            bert_tokens.append(tokenizer.tokenize(document))
-            valid_documents.append(document)
+            if i in label and res[i] >= 0.6:
+                target_certain.append(i)
+            elif i in label:
+                target_unsure.append(i)
+
+        # save the correct and certain predictions
+        if len(target_certain) != 0:
+            target_indices_certain.append(target_certain)
+            bert_tokens_certain.append(tokenizer.tokenize(document))
+            valid_documents_certain.append(document)
+
+        # save the correct but unsure predictions
+        if len(target_unsure) != 0:
+            target_indices_unsure.append(target_unsure)
+            bert_tokens_unsure.append(tokenizer.tokenize(document))
+            valid_documents_unsure.append(document)
 
     # dump the tokens
-    with open(OUTPUT_DIR + '/bert_tokens.json', 'w+', encoding='utf-8') as f:
-        f.write(json.dumps(bert_tokens))
+    with open(os.path.join(OUTPUT_DIR, CERTAIN_DIR, 'bert_tokens.json'), 'w+', encoding='utf-8') as f:
+        f.write(json.dumps(bert_tokens_certain))
+    with open(os.path.join(OUTPUT_DIR, UNSURE_DIR, 'bert_tokens.json'), 'w+', encoding='utf-8') as f:
+        f.write(json.dumps(bert_tokens_unsure))
 
-    with open(OUTPUT_DIR + '/target_indices.json', 'w+', encoding='utf-8') as f:
-        f.write(json.dumps(target_indices))
+    # dump the indices
+    with open(os.path.join(OUTPUT_DIR, CERTAIN_DIR, 'target_indices.json'), 'w+', encoding='utf-8') as f:
+        f.write(json.dumps(target_indices_certain))
+    with open(os.path.join(OUTPUT_DIR, UNSURE_DIR, 'target_indices.json'), 'w+', encoding='utf-8') as f:
+        f.write(json.dumps(target_indices_unsure))
 
     if 'czert' not in MODEL_PATH.lower():
         method_file_dict.pop('relprop')
@@ -333,12 +334,17 @@ def main():
     with open(OUTPUT_DIR + '/method_file_dict_custom.json', 'w+', encoding='utf-8') as f:
         f.write(json.dumps(method_file_dict))
 
-    create_gradient_attributions(valid_documents, target_indices)
-    create_smoothgrad_attributions(valid_documents, target_indices)
-    create_ig_attributions(valid_documents, target_indices)
+    create_gradient_attributions(valid_documents_certain, target_indices_certain)
+    create_smoothgrad_attributions(valid_documents_certain, target_indices_certain)
+    create_ig_attributions(valid_documents_certain, target_indices_certain)
+
+    create_gradient_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+    create_smoothgrad_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+    create_ig_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
 
     if 'czert' in MODEL_PATH.lower():
-        create_relprop_attributions(valid_documents, target_indices)
+        create_relprop_attributions(valid_documents_certain, target_indices_certain)
+        create_relprop_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
 
 
 if __name__ == '__main__':

@@ -245,8 +245,10 @@ def main():
             correct_pred_sentences.append(sentence)
 
     # dump the tokens and predictions
-    with open(OUTPUT_DIR + '/sst_bert_tokens.json', 'w+', encoding='utf-8') as f:
+    with open(os.path.join(OUTPUT_DIR, CERTAIN_DIR, 'sst_bert_tokens.json'), 'w+', encoding='utf-8') as f:
         f.write(json.dumps({'bert_tokens': bert_tokens_correct, 'sst_tokens': sst_tokens_correct}))
+    with open(os.path.join(OUTPUT_DIR, UNSURE_DIR, 'sst_bert_tokens.json'), 'w+', encoding='utf-8') as f:
+        f.write(json.dumps({'bert_tokens': bert_tokens_unsure, 'sst_tokens': sst_tokens_unsure}))
 
     with open(OUTPUT_DIR + '/method_file_dict_custom.json', 'w+', encoding='utf-8') as f:
         f.write(json.dumps(method_file_dict))
