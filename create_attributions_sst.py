@@ -250,7 +250,7 @@ def main():
     with open(os.path.join(OUTPUT_DIR, UNSURE_DIR, 'sst_bert_tokens.json'), 'w+', encoding='utf-8') as f:
         f.write(json.dumps({'bert_tokens': bert_tokens_unsure, 'sst_tokens': sst_tokens_unsure}))
 
-    with open(OUTPUT_DIR + '/method_file_dict_custom.json', 'w+', encoding='utf-8') as f:
+    with open(OUTPUT_DIR + '/method_file_dict.json', 'w+', encoding='utf-8') as f:
         f.write(json.dumps(method_file_dict))
 
     # create attributions for the correctly predicted and certain
@@ -265,6 +265,11 @@ def main():
     create_ig_attributions(correct_pred_sentences, correct_pred_indices, UNSURE_DIR)
     create_relprop_attributions(correct_pred_sentences, correct_pred_indices, UNSURE_DIR)
 
+    # print document counts
+    print(f'Total documents: {len(sentences)}')
+    print(f'Correctly predicted documents: {len(correct_pred_sentences) + len(unsure_pred_sentences)}')
+    print(f'Documents predicted certainly: {len(correct_pred_sentences)}')
+    print(f'Documents predicted unsurely: {len(unsure_pred_sentences)}')
 
 if __name__ == '__main__':
     main()

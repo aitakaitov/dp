@@ -331,7 +331,7 @@ def main():
     if 'czert' not in MODEL_PATH.lower():
         method_file_dict.pop('relprop')
 
-    with open(OUTPUT_DIR + '/method_file_dict_custom.json', 'w+', encoding='utf-8') as f:
+    with open(OUTPUT_DIR + '/method_file_dict.json', 'w+', encoding='utf-8') as f:
         f.write(json.dumps(method_file_dict))
 
     create_gradient_attributions(valid_documents_certain, target_indices_certain)
@@ -345,6 +345,13 @@ def main():
     if 'czert' in MODEL_PATH.lower():
         create_relprop_attributions(valid_documents_certain, target_indices_certain)
         create_relprop_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+
+    # print report
+    print(f'Total documents: {len(documents)}')
+    print(f'Correctly predicted documents: {len(target_indices_certain) + len(target_indices_unsure)}')
+    print(f'Documents predicted certainly: {len(target_indices_certain)}')
+    print(f'Documents predicted unsurely: {len(target_indices_unsure)}')
+    # TODO maybe label counts?
 
 
 if __name__ == '__main__':
