@@ -1,20 +1,26 @@
 import json
+import os
+
 import numpy as np
 import scipy.stats
 import argparse
 
+np.random.seed(42)
+
+CERTAIN_DIR = 'certain'
+UNSURE_DIR = 'unsure'
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--attrs_dir', required=True, help='Output directory of the create_attributions_sst script')
 parser.add_argument('--output_file', default='metrics.csv', help='File to write the results to')
-parser.add_argument('--absolute', default=False, help='If True, absolute attributions, else Pos/Neg attributions')
+parser.add_argument('--positive_only', default=False, help='If True, negative attributions zeroed, else Pos/Neg attributions')
+parser.add_argument('--pred_type', required=False, default='certain', help='One of [certain, unsure]')
 
 args = parser.parse_args()
 
+
 OUTPUT_FILE = args.output_file
-np.random.seed(42)
 ATTRS_DIR = args.attrs_dir
-ATTRS_ABS = args.absolute
 LOWERCASE_SST = True if 'uncased' in ATTRS_DIR else False
 
 MINIMAL_TOKEN_COUNT = 12
@@ -63,11 +69,11 @@ def remove_accents(string):
 
 
 def get_method_file_dict():
-    return load_json(ATTRS_DIR + '/method_file_dict_custom.json')
+    return load_json(ATTRS_DIR + '/method_file_dict.json')
 
 
 def get_tokens():
-    return load_json(ATTRS_DIR + '/sst_bert_tokens.json')
+    return load_json(os.path.join(ATTRS_DIR, args.pred_type, 'sst_bert_tokens.json'))
 
 
 def to_abs_values(values):
@@ -84,23 +90,33 @@ def rec_abs(a):
     return new_list
 
 
+def remove_negative_values(values):
+    return rec_remove_neg(values)
+
+
+def rec_remove_neg(values):
+    new_list = []
+    for el in values:
+        if isinstance(el, list):
+            new_list.append(rec_remove_neg(el))
+        else:
+            new_list.append(max(0, el))
+    return new_list
+
+
 def generate_random_attrs(method_file_dict):
     # choose the first attrs file to get the dimensions of the attributions
     method = 'grads'
-    attrs_file = method_file_dict[method]
-    attrs = load_json(ATTRS_DIR + "/" + attrs_file.split('/')[-1])
+    attrs = load_json(os.path.join(ATTRS_DIR, CERTAIN_DIR, method_file_dict[method]))
     random_attrs = []
-    random_time = 0
 
     for attr in attrs[0]:
         shape = np.array(attr).shape
         r = np.random.uniform(-0.5, 0.5, shape)
         random_attrs.append(r.tolist())
 
-    res = [random_attrs, random_time]
-    random_file = ATTRS_DIR + "/random.json"
-    with open(random_file, 'w+', encoding='utf-8') as f:
-        f.write(json.dumps(res))
+    with open(os.path.join(ATTRS_DIR, args.pred_type, 'random.json'), 'w+', encoding='utf-8') as f:
+        f.write(json.dumps(random_attrs))
 
     method_file_dict['random'] = 'random.json'
 
@@ -138,7 +154,7 @@ def preprocess_token_attrs(sst_bert_tokens: dict, attributions: list):
         # tokenizer can split the sst token but it can't merge any, thus
         # we can do this
         if len(sst_tokens[sample_index]) == len(bert_tokens[sample_index]):
-            processed_attributions.append(attributions[0][sample_index])
+            processed_attributions.append(attributions[sample_index])
             continue
 
         sst = sst_tokens[sample_index]
@@ -150,7 +166,7 @@ def preprocess_token_attrs(sst_bert_tokens: dict, attributions: list):
         for sst_index in range(len(sst)):
             if sst[sst_index] == bert[bert_index]:
                 # if the tokens match, the attribution stays
-                sample_attributions.append(attributions[0][sample_index][bert_index])
+                sample_attributions.append(attributions[sample_index][bert_index])
                 bert_index += 1
             else:
                 # otherwise we need to iterate forwards to match multiple bert tokens to one sst token
@@ -180,12 +196,12 @@ def preprocess_token_attrs(sst_bert_tokens: dict, attributions: list):
                 size = bert_index - start
                 _sum = 0
                 for i in range(size):
-                    _sum += attributions[0][sample_index][start + i]
+                    _sum += attributions[sample_index][start + i]
                 sample_attributions.append(_sum / size)
 
         processed_attributions.append(sample_attributions)
 
-    return processed_attributions, attributions[1]
+    return processed_attributions
 
 
 def get_sst_sentiments(sst_tokens: list, phrase_sentiments: dict):
@@ -218,31 +234,30 @@ def get_sst_labels(sst_bert_tokens: dict, phrase_sentiments: dict):
 def merge_embedding_attrs(attributions: list):
     # preprocess the embedding attributions
     # if the shape has only one dimension, there is nothing to do
-    if len(np.array(attributions[0][0]).shape) == 1:
+    if len(np.array(attributions[0]).shape) == 1:
         return attributions
 
-    # average/sum over embeddings
+    # average over embeddings
     attrs_processed = []
-    for attr in attributions[0]:
+    for attr in attributions:
         attr = np.array(attr)
         attr = np.average(attr, axis=1)
-        # attr = np.sum(attr, axis=1)
         attrs_processed.append(attr.tolist())
 
-    return [attrs_processed, attributions[1]]
+    return attrs_processed
 
 
 def scale_shift_attrs(attributions: list):
     # scale the attributions to <-0.5, 0.5>,
     scaled_attrs = []
-    for sentence_attrs in attributions[0]:
+    for sentence_attrs in attributions:
         sentence_attrs = np.array(sentence_attrs)
         _max = max([abs(x) for x in sentence_attrs])
         if _max != 0:
             sentence_attrs = np.array(sentence_attrs) / _max / 2
         scaled_attrs.append(list(sentence_attrs))
 
-    return [scaled_attrs, attributions[1]]
+    return scaled_attrs
 
 
 def scale_sst_attrs(sst_attrs: list):
@@ -290,7 +305,7 @@ def get_min_k_indices(attrs, k):
 
 def eval_top_k(bert_attrs, sst_attrs, label, K):
     # compare top k
-    if label == 1 or ATTRS_ABS:
+    if label == 1 or args.positive_only:
         top_bert_indices = get_max_k_indices(bert_attrs, K)
         top_sst_indices = get_max_k_indices(sst_attrs, K)
     else:
@@ -332,8 +347,8 @@ def process_method(bert_attrs: list, sst_attrs: list, short_samples_indices: lis
     bert_attrs = scale_shift_attrs(bert_attrs)
     bert_attrs = preprocess_token_attrs(sst_bert_tokens, bert_attrs)
 
-    if ATTRS_ABS:
-        bert_attrs = to_abs_values(bert_attrs)
+    if args.positive_only:
+        bert_attrs = remove_negative_values(bert_attrs)
 
     # evaluate the preprocessed attributions
     evaluations = {
@@ -343,7 +358,7 @@ def process_method(bert_attrs: list, sst_attrs: list, short_samples_indices: lis
     }
 
     i = 0
-    for bert_attr, sst_attr, label in zip(bert_attrs[0], sst_attrs, labels):
+    for bert_attr, sst_attr, label in zip(bert_attrs, sst_attrs, labels):
         if i in short_samples_indices:
             continue
         res = evaluate_attr(bert_attr, sst_attr, label)
@@ -369,8 +384,8 @@ def main():
     sst_attrs = scale_sst_attrs(sst_attrs)
     short_sample_indices = get_short_sample_indices(sst_bert_tokens)
 
-    if ATTRS_ABS:
-        sst_attrs = to_abs_values(sst_attrs)
+    if args.positive_only:
+        sst_attrs = remove_negative_values(sst_attrs)
 
     if LOWERCASE_SST:
         sst_bert_tokens['sst_tokens'] = lowercase_sst_tokens(sst_bert_tokens['sst_tokens'])
@@ -378,10 +393,10 @@ def main():
     output_csv_file.write('method;top1;top3;top5\n')
     # process attributions for each method
     for method, file in method_file_dict.items():
-        if not ATTRS_ABS and method == 'relprop':
+        if not args.positive_only and method == 'relprop':
             continue
         
-        attrs = load_json(ATTRS_DIR + '/' + file)
+        attrs = load_json(str(os.path.join(ATTRS_DIR, args.pred_type, file)))
 
         evals = process_method(attrs, sst_attrs, short_sample_indices, sst_bert_tokens, sst_labels)
         output_csv_file.write(f'{method};' +
