@@ -34,3 +34,14 @@ baselines
 bert-base-cased-sst
 datasets_ours/sst/dev-small.csv
 datasets_ours/sst/train-small.csv
+datasets_ours/sst wip/consistency_test.py
+datasets_ours/sst wip/datasetSentences.txt
+datasets_ours/sst wip/datasetSplit.txt
+datasets_ours/sst wip/dictionary.txt
+datasets_ours/sst wip/original_rt_snippets.txt
+datasets_ours/sst wip/README.txt
+datasets_ours/sst wip/sentiment_labels.txt
+datasets_ours/sst wip/SOStr.txt
+datasets_ours/sst wip/STree.txt
+datasets_ours/sst wip/train-extended-unshuffled.tsv
+datasets_ours/sst wip/train-unextended.tsv
