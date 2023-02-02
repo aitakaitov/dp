@@ -54,7 +54,7 @@ def main():
 
     with open('train.tsv', 'a', encoding='utf-8') as f:
         for phrase, sentiment in train_add_phrases_sent:
-            f.write(f'{phrase}\t{sentiment}\n')
+            f.write(f'{phrase}\t{0 if sentiment < 0.5 else 1}\n')
 
     print(len(train_add_phrases_sent))
 
@@ -66,7 +66,7 @@ def get_phrases():
 
 def get_train_sentences():
     sentences = []
-    with open('train.tsv', 'r', encoding='utf-8') as f:
+    with open('train.csv', 'r', encoding='utf-8') as f:
         lines = f.readlines()[1:]
         for line in lines:
             sentence, _ = line.strip().split('\t')
@@ -76,13 +76,13 @@ def get_train_sentences():
 
 def get_used_sentences():
     sentences = []
-    with open('dev.tsv', 'r', encoding='utf-8') as f:
+    with open('dev.csv', 'r', encoding='utf-8') as f:
         lines = f.readlines()[1:]
         for line in lines:
             sentence, _ = line.strip().split('\t')
             sentences.append(sentence)
 
-    with open('test.tsv', 'r', encoding='utf-8') as f:
+    with open('test.csv', 'r', encoding='utf-8') as f:
         lines = f.readlines()[1:]
         for line in lines:
             sentence, _ = line.strip().split('\t')
