@@ -52,7 +52,7 @@ def main():
         if not found:
             train_add_phrases_sent.append([phrase, sentiment])
 
-    with open('train.tsv', 'a', encoding='utf-8') as f:
+    with open('train.csv', 'a', encoding='utf-8') as f:
         for phrase, sentiment in train_add_phrases_sent:
             f.write(f'{phrase}\t{0 if sentiment < 0.5 else 1}\n')
 
