@@ -1,13 +1,22 @@
 import os
 
-import transformers
 import torch
+import transformers
 import torchmetrics
 from torch.utils.tensorboard import SummaryWriter
 import tqdm
 from datasets_ours.news.news_dataset import NewsDataset
 import json
-from sklearn.model_selection import StratifiedKFold, KFold
+from sklearn.model_selection import KFold
+
+import tensorflow as tf
+physical_devices = tf.config.list_physical_devices('GPU')
+
+# Disable all GPUS
+tf.config.set_visible_devices([], 'GPU')
+visible_devices = tf.config.get_visible_devices()
+for device in visible_devices:
+    assert device.device_type != 'GPU'
 
 import argparse
 
@@ -40,8 +49,7 @@ def train(learning_rate, epochs):
     train = NewsDataset(get_file_text('datasets_ours/news/train.csv'), tokenizer, classes_dict)
     kfold = KFold(n_splits=5, shuffle=True, random_state=42)
 
-    use_cuda = torch.cuda.is_available()
-    device = torch.device("cuda" if use_cuda else "cpu")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # record the eval results
     labels_all = []
@@ -59,21 +67,16 @@ def train(learning_rate, epochs):
         testloader = torch.utils.data.DataLoader(train, batch_size=1, sampler=test_subsampler)
 
         # fresh model
-        model = torch.load(BASE_MODEL_PATH)
+        model = torch.load(BASE_MODEL_PATH).to(device)
 
         # optimization
-        criterion = torch.nn.BCEWithLogitsLoss()
+        criterion = torch.nn.BCEWithLogitsLoss().to(device)
         optimizer = transformers.AdamW(model.parameters(), lr=learning_rate, eps=1e-08)
         scheduler = torch.optim.lr_scheduler.LinearLR(optimizer)
-        sigmoid = torch.nn.Sigmoid()
+        sigmoid = torch.nn.Sigmoid().to(device)
 
         # metrics
         train_metric = torchmetrics.F1Score().to(device)
-
-        # cuda
-        if use_cuda:
-            model = model.cuda()
-            criterion = criterion.cuda()
 
         # training, eval
         for epoch_num in range(epochs):
@@ -87,12 +90,12 @@ def train(learning_rate, epochs):
 
                 output = model(input_id, mask).logits
 
-                with torch.autocast('cuda'):
+                with torch.autocast(device):
                     batch_loss = criterion(output, train_label)
 
                 train_metric(sigmoid(output), torch.tensor(train_label, dtype=torch.int32))
 
-                model.zero_grad()
+                optimizer.zero_grad()
                 batch_loss.backward()
                 optimizer.step()
                 iteration += 1
@@ -142,7 +145,7 @@ LR = args.lr
 model_name = args.model_name
 batch_size = args.batch_size
 output_dir = args.output_dir
-from_tf = args.from_tf
+from_tf = args.from_tf.lower() == 'true'
 
 
 BASE_MODEL_PATH = 'basemodel'
@@ -153,7 +156,7 @@ except OSError:
     pass
 
 classes_dict = get_class_dict()
-model = transformers.BertForSequenceClassification.from_pretrained(model_name, num_labels=len(classes_dict), from_tf=from_tf)
+model = transformers.AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=len(classes_dict), from_tf=from_tf).to('cpu')
 tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
 
 torch.save(model, BASE_MODEL_PATH)

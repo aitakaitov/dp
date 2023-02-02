@@ -3,7 +3,6 @@ import random
 import torch
 import numpy as np
 from torch.nn.functional import one_hot
-from sklearn.model_selection import StratifiedKFold
 
 
 class NewsDataset(torch.utils.data.Dataset):

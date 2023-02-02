@@ -9,8 +9,15 @@ import tqdm
 from datasets_ours.news.news_dataset import NewsDataset
 import json
 
-from sys import argv
+import tensorflow as tf
+physical_devices = tf.config.list_physical_devices('GPU')
 
+# Disable all GPUS
+tf.config.set_visible_devices([], 'GPU')
+visible_devices = tf.config.get_visible_devices()
+for device in visible_devices:
+    assert device.device_type != 'GPU'
+    
 
 def get_class_dict():
     with open('datasets_ours/news/classes.json', 'r', encoding='utf-8') as f:
@@ -28,11 +35,10 @@ def train(learning_rate, epochs, model):
     train = NewsDataset(get_file_text('datasets_ours/news/train.csv'), tokenizer, classes_dict)
     train_dataloader = torch.utils.data.DataLoader(train, batch_size=batch_size, shuffle=True)
 
-    use_cuda = torch.cuda.is_available()
-    device = torch.device("cuda" if use_cuda else "cpu")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # optimization
-    criterion = torch.nn.BCEWithLogitsLoss()
+    criterion = torch.nn.BCEWithLogitsLoss().to(device)
     optimizer = transformers.AdamW(model.parameters(), lr=learning_rate, eps=1e-08)
     scheduler = torch.optim.lr_scheduler.LinearLR(optimizer)
     sigmoid = torch.nn.Sigmoid()
@@ -41,10 +47,7 @@ def train(learning_rate, epochs, model):
     train_metric = torchmetrics.F1Score().to(device)
     writer = SummaryWriter(output_dir + '/logs')
 
-    # cuda
-    if use_cuda:
-        model = model.cuda()
-        criterion = criterion.cuda()
+    model.to(device)
 
     # training, eval
     for epoch_num in range(epochs):
@@ -58,13 +61,13 @@ def train(learning_rate, epochs, model):
 
             output = model(input_id, mask).logits
 
-            with torch.autocast('cuda'):
+            with torch.autocast(device):
                 batch_loss = criterion(output, train_label)
 
             writer.add_scalar('loss/train', float(batch_loss), epoch_num * len(train) + iteration)
             train_metric(sigmoid(output), torch.tensor(train_label, dtype=torch.int32))
 
-            model.zero_grad()
+            optimizer.zero_grad()
             batch_loss.backward()
             optimizer.step()
             iteration += 1
