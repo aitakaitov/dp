@@ -8,6 +8,7 @@ import tqdm
 from datasets_ours.news.news_dataset import NewsDataset
 import json
 from sklearn.model_selection import KFold
+import random
 
 import tensorflow as tf
 physical_devices = tf.config.list_physical_devices('GPU')
@@ -110,16 +111,17 @@ def train(learning_rate, epochs):
                 continue
 
             for val_input, val_label in tqdm.tqdm(testloader):
-                val_label = torch.tensor(torch.unsqueeze(val_label, dim=-1), dtype=torch.int)
+                val_label = torch.unsqueeze(val_label.clone().detach(), dim=-1)
                 val_label = val_label.to(device)
 
                 mask = val_input[1].to(device)
                 input_id = val_input[0].squeeze(1).to(device)
 
-                output = model(input_id, mask).logits
-                output = sigmoid(output)
+                with torch.no_grad():
+                    output = model(input_id, mask)
+                    output = sigmoid(output.logits)
                 predictions_all.append(output.to('cpu'))
-                labels_all.append(torch.tensor(val_label, dtype=torch.int32).to('cpu'))
+                labels_all.append(val_label.clone().detach().to('cpu').type(torch.IntTensor))
 
             fold += 1
 
@@ -145,10 +147,10 @@ LR = args.lr
 model_name = args.model_name
 batch_size = args.batch_size
 output_dir = args.output_dir
-from_tf = args.from_tf.lower() == 'true'
+from_tf = True if 'Czert' in model_name else False
 
 
-BASE_MODEL_PATH = 'basemodel'
+BASE_MODEL_PATH = str(random.randint(0, 1_000_000_000))
 
 try:
     os.mkdir(output_dir)
