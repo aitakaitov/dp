@@ -45,3 +45,4 @@ datasets_ours/sst wip/SOStr.txt
 datasets_ours/sst wip/STree.txt
 datasets_ours/sst wip/train-extended-unshuffled.tsv
 datasets_ours/sst wip/train-unextended.tsv
+wandb
