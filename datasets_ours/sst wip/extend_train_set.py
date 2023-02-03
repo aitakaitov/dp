@@ -1,3 +1,4 @@
+import argparse
 import json
 import random
 
@@ -9,7 +10,9 @@ import random
 #   Also phrases shorter than 5 tokens are not considered.
 #
 
-def main():
+DELTA = 0.1
+
+def main(args):
     test_dev_sentences = get_used_sentences()
     train_sentences = get_train_sentences()
     phrases = get_phrases()
@@ -54,6 +57,9 @@ def main():
 
     with open('train.csv', 'a', encoding='utf-8') as f:
         for phrase, sentiment in train_add_phrases_sent:
+            if not args['keep_neutral']:
+                if (0.5 - DELTA) < sentiment < (0.5 + DELTA):
+                    continue
             f.write(f'{phrase}\t{0 if sentiment < 0.5 else 1}\n')
 
     print(len(train_add_phrases_sent))
@@ -91,5 +97,12 @@ def get_used_sentences():
     return sentences
 
 
+def parse_bool(s):
+    return s.lower() == 'true'
+
+
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--keep_neutral', default=False, type=parse_bool)
+    args = vars(parser.parse_args())
+    main(args)
