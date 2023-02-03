@@ -46,3 +46,4 @@ datasets_ours/sst wip/STree.txt
 datasets_ours/sst wip/train-extended-unshuffled.tsv
 datasets_ours/sst wip/train-unextended.tsv
 wandb
+run_glue_minilm.py
