@@ -147,8 +147,11 @@ LR = args.lr
 model_name = args.model_name
 batch_size = args.batch_size
 output_dir = args.output_dir
-from_tf = True if 'Czert' in model_name else False
 
+# Czert does not have a pytorch_model.bin
+from_tf = True if 'Czert' in model_name else args.from_tf.lower() == 'true'
+
+# Avoid conflicts when saving the base model
 BASE_MODEL_PATH = model_name.replace('/', '_').replace('\\', '_') + '--' + str(random.randint(0, 1_000_000_000))
 
 try:
@@ -158,7 +161,13 @@ except OSError:
 
 classes_dict = get_class_dict()
 model = transformers.AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=len(classes_dict), from_tf=from_tf).to('cpu')
-tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
+
+# MiniLMv2 uses xlm-roberta-large tokenizers but the reference is not present in the config.json, as we
+# downloaded it from Microsoft's GitHub and not HF
+if 'MiniLMv2' in model_name:
+    tokenizer = transformers.AutoTokenizer.from_pretrained('xlm-roberta-large')
+else:
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
 
 torch.save(model, BASE_MODEL_PATH)
 

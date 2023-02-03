@@ -9,6 +9,7 @@ import tqdm
 from datasets_ours.news.news_dataset import NewsDataset
 import json
 
+
 import tensorflow as tf
 physical_devices = tf.config.list_physical_devices('GPU')
 
@@ -17,7 +18,7 @@ tf.config.set_visible_devices([], 'GPU')
 visible_devices = tf.config.get_visible_devices()
 for device in visible_devices:
     assert device.device_type != 'GPU'
-    
+
 
 def get_class_dict():
     with open('datasets_ours/news/classes.json', 'r', encoding='utf-8') as f:
@@ -95,7 +96,9 @@ LR = args.lr
 model_name = args.model_name
 batch_size = args.batch_size
 output_dir = args.output_dir
-from_tf = args.from_tf
+
+# Special case for Czert
+from_tf = True if 'Czert' in model_name else args.from_tf.lower() == 'true'
 
 try:
     os.mkdir(output_dir)
@@ -104,6 +107,12 @@ except OSError:
 
 classes_dict = get_class_dict()
 model = transformers.BertForSequenceClassification.from_pretrained(model_name, num_labels=len(classes_dict), from_tf=from_tf)
-tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
+
+# MiniLMv2 uses xlm-roberta-large tokenizers but the reference is not present in the config.json, as we
+# downloaded it from Microsoft's GitHub and not HF
+if 'MiniLMv2' in model_name:
+    tokenizer = transformers.AutoTokenizer.from_pretrained('xlm-roberta-large')
+else:
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
 
 train(LR, EPOCHS, model)
