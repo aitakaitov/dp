@@ -149,8 +149,7 @@ batch_size = args.batch_size
 output_dir = args.output_dir
 from_tf = True if 'Czert' in model_name else False
 
-
-BASE_MODEL_PATH = str(random.randint(0, 1_000_000_000))
+BASE_MODEL_PATH = model_name.replace('/', '_').replace('\\', '_') + '--' + str(random.randint(0, 1_000_000_000))
 
 try:
     os.mkdir(output_dir)
