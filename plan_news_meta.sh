@@ -4,6 +4,6 @@ declare -a COUNT=(1)
 
 for MODEL in ${MODELs[@]}; do
         for C in ${COUNT[@]}; do
-                qsub -v MODEL=$MODEL train_news_kfold_meta.sh
+                qsub -v MODEL=$MODEL train_news_meta.sh
         done
 done
