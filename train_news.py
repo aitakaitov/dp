@@ -87,7 +87,7 @@ parser.add_argument("--lr", default=1e-5, help="Learning rate", type=float)
 parser.add_argument("--model_name", default='UWB-AIR/Czert-B-base-cased', help="Pretrained model path")
 parser.add_argument("--batch_size", default=1, help="Batch size", type=int)
 parser.add_argument("--output_dir", default='kfold-training-output', help="Output directory")
-parser.add_argument("--from_tf", default=False, help="If True, imported model is a TensorFlow model. Otherwise the imported model is a PyTorch model.")
+parser.add_argument("--from_tf", default='False', type=str, help="If True, imported model is a TensorFlow model. Otherwise the imported model is a PyTorch model.")
 
 args = parser.parse_args()
 

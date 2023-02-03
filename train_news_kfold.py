@@ -53,8 +53,8 @@ def train(learning_rate, epochs):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # record the eval results
-    labels_all = []
-    predictions_all = []
+    labels_all = [[] for _ in range(epochs)]
+    predictions_all = [[] for _ in range(epochs)]
 
     fold = 1
     for train_ids, test_ids in kfold.split(train):
@@ -106,10 +106,6 @@ def train(learning_rate, epochs):
             model.eval()
             scheduler.step()
 
-            # eval only on the last epoch
-            if epoch_num < epochs - 1:
-                continue
-
             for val_input, val_label in tqdm.tqdm(testloader):
                 val_label = torch.unsqueeze(val_label.clone().detach(), dim=-1)
                 val_label = val_label.to(device)
@@ -120,16 +116,19 @@ def train(learning_rate, epochs):
                 with torch.no_grad():
                     output = model(input_id, mask)
                     output = sigmoid(output.logits)
-                predictions_all.append(output.to('cpu'))
-                labels_all.append(val_label.clone().detach().to('cpu').type(torch.IntTensor))
+                predictions_all[epoch_num].append(output.to('cpu'))
+                labels_all[epoch_num].append(val_label.clone().detach().to('cpu').type(torch.IntTensor))
 
-            fold += 1
+        fold += 1
 
-    eval_metric = torchmetrics.F1Score().to('cpu')
-    for prediction, label in zip(predictions_all, labels_all):
-        eval_metric(prediction, label)
-    print('------------------------------------')
-    print(f'F1 Score: {float(eval_metric.compute())}')
+    i = 0
+    print('\n\n')
+    for epoch_predictions, epoch_labels in zip(predictions_all, labels_all):
+        eval_metric = torchmetrics.F1Score().to('cpu')
+        for prediction, label in zip(epoch_predictions, epoch_labels):
+            eval_metric(prediction, label)
+        print(f'EPOCH {i + 1} EVAL F1: {eval_metric.compute()}')
+        i += 1
 
 
 parser = argparse.ArgumentParser()
@@ -138,7 +137,7 @@ parser.add_argument("--lr", default=1e-5, help="Learning rate", type=float)
 parser.add_argument("--model_name", default='UWB-AIR/Czert-B-base-cased', help="Pretrained model path")
 parser.add_argument("--batch_size", default=1, help="Batch size", type=int)
 parser.add_argument("--output_dir", default='kfold-training-output', help="Output directory")
-parser.add_argument("--from_tf", default=False, help="If True, imported model is a TensorFlow model. Otherwise the imported model is a PyTorch model.")
+parser.add_argument("--from_tf", default='False', type=str, help="If True, imported model is a TensorFlow model. Otherwise the imported model is a PyTorch model.")
 
 args = parser.parse_args()
 
@@ -153,11 +152,6 @@ from_tf = True if 'Czert' in model_name else args.from_tf.lower() == 'true'
 
 # Avoid conflicts when saving the base model
 BASE_MODEL_PATH = model_name.replace('/', '_').replace('\\', '_') + '--' + str(random.randint(0, 1_000_000_000))
-
-try:
-    os.mkdir(output_dir)
-except OSError:
-    pass
 
 classes_dict = get_class_dict()
 model = transformers.AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=len(classes_dict), from_tf=from_tf).to('cpu')
