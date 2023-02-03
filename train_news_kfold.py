@@ -47,6 +47,8 @@ def get_fold_sizes(dataset_length, fold_count=5):
 
 
 def train(learning_rate, epochs):
+    of = open(model_name.replace('/', '_').replace('\\', '_') + '-output', 'w+', encoding='utf-8')
+
     train = NewsDataset(get_file_text('datasets_ours/news/train.csv'), tokenizer, classes_dict)
     kfold = KFold(n_splits=5, shuffle=True, random_state=42)
 
@@ -58,8 +60,8 @@ def train(learning_rate, epochs):
 
     fold = 1
     for train_ids, test_ids in kfold.split(train):
-        print(f'FOLD {fold}')
-        print('----------------------')
+        print(f'FOLD {fold}', file=of)
+        print('----------------------', file=of)
 
         # init the fold
         train_subsampler = torch.utils.data.SubsetRandomSampler(train_ids)
@@ -81,7 +83,7 @@ def train(learning_rate, epochs):
 
         # training, eval
         for epoch_num in range(epochs):
-            print(f'EPOCH: {epoch_num + 1}')
+            print(f'EPOCH: {epoch_num + 1}', file=of)
             iteration = 0
             model.train()
             for train_input, train_label in tqdm.tqdm(trainloader):
@@ -101,7 +103,7 @@ def train(learning_rate, epochs):
                 optimizer.step()
                 iteration += 1
 
-            print(f'F1 TRAIN: {float(train_metric.compute())}')
+            print(f'F1 TRAIN: {float(train_metric.compute())}', file=of)
             train_metric.reset()
             model.eval()
             scheduler.step()
@@ -127,7 +129,7 @@ def train(learning_rate, epochs):
         eval_metric = torchmetrics.F1Score().to('cpu')
         for prediction, label in zip(epoch_predictions, epoch_labels):
             eval_metric(prediction, label)
-        print(f'EPOCH {i + 1} EVAL F1: {eval_metric.compute()}')
+        print(f'EPOCH {i + 1} EVAL F1: {eval_metric.compute()}', file=of)
         i += 1
 
 
