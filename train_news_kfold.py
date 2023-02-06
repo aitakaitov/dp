@@ -47,7 +47,7 @@ def get_fold_sizes(dataset_length, fold_count=5):
 
 
 def train(learning_rate, epochs):
-    of = open(model_name.replace('/', '_').replace('\\', '_') + '-output', 'w+', encoding='utf-8')
+    of = open(model_name.replace('/', '_').replace('\\', '_') + f'-{random_number}-output', 'w+', encoding='utf-8')
 
     train = NewsDataset(get_file_text('datasets_ours/news/train.csv'), tokenizer, classes_dict)
     kfold = KFold(n_splits=5, shuffle=True, random_state=42)
@@ -75,7 +75,11 @@ def train(learning_rate, epochs):
         # optimization
         criterion = torch.nn.BCEWithLogitsLoss().to(device)
         optimizer = transformers.AdamW(model.parameters(), lr=learning_rate, eps=1e-08)
-        scheduler = torch.optim.lr_scheduler.LinearLR(optimizer)
+
+        epoch_iters = len(trainloader)
+        scheduler = transformers.get_linear_schedule_with_warmup(optimizer, num_warmup_steps=epoch_iters,
+                                                                 num_training_steps=epochs * epoch_iters)
+
         sigmoid = torch.nn.Sigmoid().to(device)
 
         # metrics
@@ -103,10 +107,11 @@ def train(learning_rate, epochs):
                 optimizer.step()
                 iteration += 1
 
+                scheduler.step()
+
             print(f'F1 TRAIN: {float(train_metric.compute())}', file=of)
             train_metric.reset()
             model.eval()
-            scheduler.step()
 
             for val_input, val_label in tqdm.tqdm(testloader):
                 val_label = torch.unsqueeze(val_label.clone().detach(), dim=-1)
@@ -153,7 +158,8 @@ output_dir = args.output_dir
 from_tf = True if 'Czert' in model_name else args.from_tf.lower() == 'true'
 
 # Avoid conflicts when saving the base model
-BASE_MODEL_PATH = model_name.replace('/', '_').replace('\\', '_') + '--' + str(random.randint(0, 1_000_000_000))
+random_number = str(random.randint(0, 1_000_000_000))
+BASE_MODEL_PATH = model_name.replace('/', '_').replace('\\', '_') + '--' + random_number
 
 classes_dict = get_class_dict()
 model = transformers.AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=len(classes_dict), from_tf=from_tf).to('cpu')
