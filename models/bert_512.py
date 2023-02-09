@@ -12,66 +12,6 @@ def load_model():
     return model
 
 
-class BERT512(torch.nn.Module):
-
-    def __init__(self):
-        super(BERT512, self).__init__()
-        self.bert = load_model()
-        self.dropout = torch.nn.Dropout(0.1)
-        self.classifier = torch.nn.Linear(768, 1)
-        self.sigmoid = torch.nn.Sigmoid()
-
-    def forward(self, input_ids, attention_mask, training=True):
-        res = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        x = self.dropout(res.pooler_output)
-        x = self.classifier(x)
-
-        return x if training else self.sigmoid(x)
-
-
-class BERT512ForCaptum(torch.nn.Module):
-
-    def __init__(self):
-        super(BERT512ForCaptum, self).__init__()
-        self.bert = load_model()
-        self.dropout = torch.nn.Dropout(0.1)
-        self.classifier = torch.nn.Linear(768, 1)
-        self.sigmoid = torch.nn.Sigmoid()
-
-    def forward(self, inputs_embeds, attention_mask):
-        res = self.bert(inputs_embeds=inputs_embeds, attention_mask=attention_mask)
-        x = self.dropout(res.pooler_output)
-        x = self.classifier(x)
-
-        return self.activation_sigmoid(x)
-
-    def get_embedding_matrix(self):
-        return self.bert.base_model.embeddings.word_embeddings.weight.data
-
-
-class BERT512RelProp(torch.nn.Module):
-    def __init__(self):
-        super(BERT512RelProp, self).__init__()
-        config = torch.hub.load('huggingface/pytorch-transformers', 'config', 'bert-base-uncased')
-        self.bert = BertModel(config)
-        self.dropout = Dropout(0.1)
-        self.classifier = Linear(768, 1)
-        self.sigmoid = Sigmoid()
-
-    def forward(self, input_ids, attention_mask):
-        res = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        x = self.dropout(res.pooler_output)
-        x = self.classifier(x)
-        return self.sigmoid(x)
-
-    def relprop(self, cam=None, **kwargs):
-        cam = self.sigmoid.relprop(cam, **kwargs)
-        cam = self.classifier.relprop(cam, **kwargs)
-        cam = self.dropout.relprop(cam, **kwargs)
-        cam = self.bert.relprop(cam, **kwargs)
-        return cam
-
-
 class BertSequenceClassifierSST(transformers.BertForSequenceClassification):
     def __init__(self, config):
         super().__init__(config)
@@ -209,7 +149,6 @@ class BertSequenceClassifierNews(transformers.BertForSequenceClassification, tra
         cam = self.classifier.relprop(cam, **kwargs)
         cam = self.dropout.relprop(cam, **kwargs)
         cam = self.bert.relprop(cam, **kwargs)
-        # print("conservation: ", cam.sum())
         return cam
 
 
@@ -264,8 +203,14 @@ class RobertaSequenceClassifierNews(transformers.RobertaForSequenceClassificatio
         else:
             return self.sigmoid(logits)
 
+    def relprop(self, cam=None, **kwargs):
+        cam = self.classifier.relprop(cam, **kwargs)
+        cam = self.dropout.relprop(cam, **kwargs)
+        cam = self.bert.relprop(cam, **kwargs)
+        return cam
 
-class ElectraSequenceClassifierNews(transformers.ElectraForSequenceClassification, transformers.ElectraPreTrainedModel):
+
+class ElectraSequenceClassifierNews(transformers.ElectraForSequenceClassification):
     def __init__(self, config):
         super().__init__(config)
         self.num_labels = config.num_labels
