@@ -11,12 +11,12 @@ argparser = argparse.ArgumentParser()
 argparser.add_argument('--tokenizer')
 argparser.add_argument('--model_folder')
 argparser.add_argument('--output_dir')
-args = argparser.parse_args()
+args = vars(argparser.parse_args())
 
 
-tokenizer = transformers.AutoTokenizer.from_pretrained(args.tokenizer)
-model = BertSequenceClassifierSST.from_pretrained(args.model_folder, num_labels=2, local_files_only=True)
-model.load_state_dict(torch.load(args.model_file))
+tokenizer = transformers.AutoTokenizer.from_pretrained(args['tokenizer'])
+model = BertSequenceClassifierSST.from_pretrained(args['model_folder'], num_labels=2, local_files_only=True)
+model.load_state_dict(torch.load(args['model_file']))
 model = model.to(device)
 model.eval()
 embeddings = model.bert.base_model.embeddings.word_embeddings.weight.data
@@ -24,7 +24,7 @@ embedding_dimensions = embeddings.shape[1]
 padding_embedding = tokenizer.convert_tokens_to_ids('[PAD]')
 padding_embedding = torch.index_select(embeddings, 0, torch.tensor(padding_embedding).to(device))
 
-OUTPUT_DIR = args.output_dir
+OUTPUT_DIR = args['output_dir']
 os.makedirs(OUTPUT_DIR)
 TOLERANCE = 0.025
 
