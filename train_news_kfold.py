@@ -78,8 +78,7 @@ def train(learning_rate, epochs):
 
         epoch_iters = len(trainloader)
         scheduler = transformers.get_linear_schedule_with_warmup(optimizer, num_warmup_steps=epoch_iters,
-                                                                 num_training_steps=epochs * epoch_iters)
-
+                                                                num_training_steps=epoch_iters * epochs * 25)
         sigmoid = torch.nn.Sigmoid().to(device)
 
         # metrics

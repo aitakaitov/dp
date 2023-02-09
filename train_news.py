@@ -41,7 +41,9 @@ def train(learning_rate, epochs, model):
     # optimization
     criterion = torch.nn.BCEWithLogitsLoss().to(device)
     optimizer = transformers.AdamW(model.parameters(), lr=learning_rate, eps=1e-08)
-    scheduler = torch.optim.lr_scheduler.LinearLR(optimizer)
+    epoch_iters = len(train_dataloader)
+    scheduler = transformers.get_linear_schedule_with_warmup(optimizer, num_warmup_steps=epoch_iters,
+                                                             num_training_steps=epoch_iters * epochs * 25)
     sigmoid = torch.nn.Sigmoid()
 
     # metrics
@@ -72,11 +74,13 @@ def train(learning_rate, epochs, model):
             batch_loss.backward()
             optimizer.step()
             iteration += 1
+            scheduler.step()
 
         writer.add_scalar('f1/train', train_metric.compute(), (epoch_num + 1) * len(train))
         print(f'F1 TRAIN: {float(train_metric.compute())}')
         train_metric.reset()
-        scheduler.step()
+
+        torch.save(model, output_dir + '/model-epoch-' + str(epoch_num + 1))
 
     model.save_pretrained(output_dir)
 
@@ -85,6 +89,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--epochs", default=4, help="Number of training epochs", type=int)
 parser.add_argument("--lr", default=1e-5, help="Learning rate", type=float)
 parser.add_argument("--model_name", default='UWB-AIR/Czert-B-base-cased', help="Pretrained model path")
+parser.add_argument("--model_file", required=True, type=str)
 parser.add_argument("--batch_size", default=1, help="Batch size", type=int)
 parser.add_argument("--output_dir", default='kfold-training-output', help="Output directory")
 parser.add_argument("--from_tf", default='False', type=str, help="If True, imported model is a TensorFlow model. Otherwise the imported model is a PyTorch model.")
@@ -106,7 +111,7 @@ except OSError:
     pass
 
 classes_dict = get_class_dict()
-model = transformers.BertForSequenceClassification.from_pretrained(model_name, num_labels=len(classes_dict), from_tf=from_tf)
+model = torch.load(args.model_file)
 
 # MiniLMv2 uses xlm-roberta-large tokenizers but the reference is not present in the config.json, as we
 # downloaded it from Microsoft's GitHub and not HF
