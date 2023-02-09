@@ -47,3 +47,6 @@ datasets_ours/sst wip/train-extended-unshuffled.tsv
 datasets_ours/sst wip/train-unextended.tsv
 wandb
 run_glue_minilm.py
+mMiniLMv2-L12-H384
+mMiniLMv2-L6-H384
+roberta_test
