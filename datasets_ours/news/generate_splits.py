@@ -22,6 +22,8 @@ def main():
     # process the train split
     train_csv = open('train.csv', 'w+', encoding='utf-8')
     for file in train_files:
+        if '.txt' not in file:
+            continue
         classes = file[:-4].split('_')[1:]
         valid_classes = []
 
@@ -46,6 +48,8 @@ def main():
     # same process for the dev set
     dev_csv = open('dev.csv', 'w+', encoding='utf-8')
     for file in dev_files:
+        if '.txt' not in file:
+            continue
         classes = file[:-4].split('_')[1:]
         valid_classes = []
         for clss in classes:
