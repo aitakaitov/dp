@@ -50,3 +50,6 @@ run_glue_minilm.py
 mMiniLMv2-L12-H384
 mMiniLMv2-L6-H384
 roberta_test
+baselines_batch_sst.py
+baselines_meta.sh
+datasets_ours/news/test.py
