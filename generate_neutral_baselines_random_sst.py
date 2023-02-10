@@ -6,7 +6,7 @@ from models.bert_512 import BertSequenceClassifierSST
 import argparse
 
 
-def main(args):
+def main(args: dict):
     print(f'Model folder: {args["model_folder"]}')
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -29,15 +29,14 @@ def main(args):
     OUTPUT_DIR = args['output_dir']
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-
-    for length in range(1, 513):
+    for length in range(args['start'], 513):
         # create an attention mask for a given length
-        arr = [1 for i in range(length)]
-        arr.extend([0 for i in range(512 - length)])
+        arr = [1 for _ in range(length)]
+        arr.extend([0 for _ in range(512 - length)])
         attention_mask = torch.tensor([arr]).to(device)
 
         # generate random sequence
-        rnd = torch.randn((1, length, embedding_dimensions), dtype=torch.float32).to('cpu')
+        rnd = torch.rand((1, length, embedding_dimensions), dtype=torch.float32).to('cpu')
         padding = torch.unsqueeze(padding_embedding.repeat((512 - length, 1)), 0).to('cpu')
         baseline = torch.cat((rnd, padding), 1).to(device).requires_grad_(True)
 
@@ -64,6 +63,7 @@ if __name__ == '__main__':
     argparser.add_argument('--model_folder', required=True, type=str)
     argparser.add_argument('--output_dir', required=True, type=str)
     argparser.add_argument('--tolerance', required=False, default=0.025, type=float)
+    argparser.add_argument('--start', required=False, default=1, type=int)
     args = vars(argparser.parse_args())
     main(args)
 

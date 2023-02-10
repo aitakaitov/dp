@@ -5,55 +5,60 @@ import os
 import argparse
 
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+def main(args: dict):
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-argparser = argparse.ArgumentParser()
-argparser.add_argument('--tokenizer')
-argparser.add_argument('--model_folder')
-argparser.add_argument('--output_dir')
-args = vars(argparser.parse_args())
+    # load tokenizer and model
+    tokenizer = transformers.AutoTokenizer.from_pretrained(args['tokenizer'])
+    model = BertSequenceClassifierSST.from_pretrained(args['model_folder'], num_labels=2, local_files_only=True)
+    model = model.to(device)
+    model.eval()
 
+    # extract padding token
+    embeddings = model.bert.base_model.embeddings.word_embeddings.weight.data
+    embedding_dimensions = embeddings.shape[1]
+    padding_embedding = tokenizer.convert_tokens_to_ids('[PAD]')
+    padding_embedding = torch.index_select(embeddings, 0, torch.tensor(padding_embedding).to(device))
 
-tokenizer = transformers.AutoTokenizer.from_pretrained(args['tokenizer'])
-model = BertSequenceClassifierSST.from_pretrained(args['model_folder'], num_labels=2, local_files_only=True)
-model.load_state_dict(torch.load(args['model_file']))
-model = model.to(device)
-model.eval()
-embeddings = model.bert.base_model.embeddings.word_embeddings.weight.data
-embedding_dimensions = embeddings.shape[1]
-padding_embedding = tokenizer.convert_tokens_to_ids('[PAD]')
-padding_embedding = torch.index_select(embeddings, 0, torch.tensor(padding_embedding).to(device))
+    os.makedirs(args['output_dir'], exist_ok=True)
 
-OUTPUT_DIR = args['output_dir']
-os.makedirs(OUTPUT_DIR)
-TOLERANCE = 0.025
+    for length in range(args['start'], 513):
+        # generate attention mask for the length
+        arr = [1 for _ in range(length)]
+        arr.extend([0 for _ in range(512 - length)])
+        attention_mask = torch.tensor([arr]).to(device)
 
+        # generate random embeddings and add padding embeddings
+        rnd = torch.randn((1, length, embedding_dimensions), dtype=torch.float32).to(device)
+        padding = torch.unsqueeze(padding_embedding.repeat((512 - length, 1)), 0).to(device)
+        baseline = torch.cat((rnd, padding), 1).to(device).requires_grad_(True)
 
-for length in range(1, 513):
-    print('Length ' + str(length))
-    arr = [1 for i in range(length)]
-    arr.extend([0 for i in range(512 - length)])
-    attention_mask = torch.tensor([arr]).to(device)
-
-    rnd = torch.randn((1, length, embedding_dimensions), dtype=torch.float32).to(device)
-    padding = torch.unsqueeze(padding_embedding.repeat((512 - length, 1)), 0).to(device)
-    baseline = torch.cat((rnd, padding), 1).to(device).requires_grad_(True)
-
-    lr = 0.25
-    output = model(baseline, attention_mask=attention_mask)[:, 0]
-    res = float(output)
-    while abs(res - 0.5) > TOLERANCE:
-        grads = torch.autograd.grad(output, baseline)[0]
-        if res < 0.5:
-            baseline = lr * grads + baseline
-        else:
-            baseline = -1 * lr * grads + baseline
-
-        #lr *= 0.99
+        # use gradients to modify the input embeddings
+        lr = args['lr']
         output = model(baseline, attention_mask=attention_mask)[:, 0]
         res = float(output)
+        while abs(res - 0.5) > args['tolerance']:
+            grads = torch.autograd.grad(output, baseline)[0]
+            if res < 0.5:
+                baseline = lr * grads + baseline
+            else:
+                baseline = -1 * lr * grads + baseline
 
-    print('Saving')
-    torch.save(baseline, OUTPUT_DIR + '/' + f'{length}.pt')
+            output = model(baseline, attention_mask=attention_mask)[:, 0]
+            res = float(output)
+
+        torch.save(baseline, args['output_dir'] + '/' + f'{length}.pt')
+
+
+if __name__ == '__main__':
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument('--tokenizer', type=str, required=True)
+    argparser.add_argument('--model_folder', type=str, required=True)
+    argparser.add_argument('--output_dir', type=str, required=True)
+    argparser.add_argument('--start', type=int, default=1, required=False)
+    argparser.add_argument('--lr', type=float, default=0.5, required=False)
+    argparser.add_argument('--tolerance', type=float, default=0.025, required=False)
+    args = vars(argparser.parse_args())
+    main(args)
 
 
