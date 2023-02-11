@@ -17,6 +17,8 @@ def main(args: dict):
     model = model.to(device)
     model.eval()
 
+    softmax = torch.nn.Softmax(dim=1).to(device)
+
     # extract embeddings and get dimensions
     embeddings = model.bert.base_model.embeddings.word_embeddings.weight.data
     embedding_dimensions = embeddings.shape[1]
@@ -41,7 +43,7 @@ def main(args: dict):
         baseline = torch.cat((rnd, padding), 1).to(device).requires_grad_(True)
 
         # get a prediction
-        output = model(baseline, attention_mask=attention_mask)[:, 0]
+        output = softmax(model(baseline, attention_mask=attention_mask))[:, 0]
         res = float(output)
 
         # while the prediction is 'tolerance-far' from neutral (0.5), generate new random baselines
@@ -50,7 +52,7 @@ def main(args: dict):
             padding = torch.unsqueeze(padding_embedding.repeat((512 - length, 1)), 0).to('cpu')
             baseline = torch.cat((rnd, padding), 1).to(device).requires_grad_(True)
 
-            output = model(baseline, attention_mask=attention_mask)[:, 0]
+            output = softmax(model(baseline, attention_mask=attention_mask))[:, 0]
             res = float(output)
 
         # save the neutral baseline tensor
