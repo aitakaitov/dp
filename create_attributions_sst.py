@@ -10,36 +10,13 @@ import argparse
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+# How far from 0.5 we can be for the prediction to be uncertain
 UNSURE_PREDICTION_DELTA = 0.1
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--output_dir', default='output_sst_attrs', help='Attributions output directory')
-parser.add_argument('--model_path', required=True, help='Trained model')
-parser.add_argument('--baselines_dir', required=True, help='Directory with baseline examples')
-
-args = parser.parse_args()
-
-OUTPUT_DIR = args.output_dir
-MODEL_PATH = args.model_path
-BASELINES_DIR = args.baselines_dir
-
+# directory for certain and correct predictions
 CERTAIN_DIR = 'certain'
+# directory for correct but uncertain prediction
 UNSURE_DIR = 'unsure'
-
-try:
-    os.mkdir(OUTPUT_DIR)
-    os.mkdir(os.path.join(OUTPUT_DIR, CERTAIN_DIR))
-    os.mkdir(os.path.join(OUTPUT_DIR, UNSURE_DIR))
-except OSError:
-    pass
-
-tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, local_files_only=True)
-model = BertSequenceClassifierSST.from_pretrained(MODEL_PATH, local_files_only=True)
-model = model.to(device)
-model.eval()
-embeddings = model.bert.base_model.embeddings.word_embeddings.weight.data
-
-relprop_explainer = Generator(model)
 
 method_file_dict = {
     'grads': 'gradient_attrs_custom.json',
@@ -47,22 +24,33 @@ method_file_dict = {
     'ig_20':  'ig_20_attrs_custom.json',
     'ig_50':  'ig_50_attrs_custom.json',
     'ig_100':  'ig_100_attrs_custom.json',
-    'ig_200':  'ig_200_attrs_custom.json',
     'sg_20':  'sg_20_attrs_custom.json',
     'sg_50':  'sg_50_attrs_custom.json',
     'sg_100':  'sg_100_attrs_custom.json',
-    'sg_200':  'sg_200_attrs_custom_bk.json',
     'sg_20_x_inputs':  'sg_20_x_inputs_attrs_custom.json',
     'sg_50_x_inputs':  'sg_50_x_inputs_attrs_custom.json',
     'sg_100_x_inputs':  'sg_100_x_inputs_attrs_custom.json',
-    'sg_200_x_inputs':  'sg_200_x_inputs_attrs_custom.json',
     'relprop':  'relprop_attrs.json'
 }
+
+
+def create_dirs():
+    try:
+        os.mkdir(OUTPUT_DIR)
+        os.mkdir(os.path.join(OUTPUT_DIR, CERTAIN_DIR))
+        os.mkdir(os.path.join(OUTPUT_DIR, UNSURE_DIR))
+    except OSError:
+        # if the directories exist it's okay
+        pass
 
 #   -----------------------------------------------------------------------------------------------
 
 
 def get_sentences_tokens_and_phrase_sentiments():
+    """
+    Loads the needed SST dataset features
+    :return:
+    """
     with open('datasets_ours/sst/sentences_tokens_orig_test_no_neutral.json', 'r', encoding='utf-8') as f:
         sentences_tokens = json.loads(f.read())
 
@@ -79,6 +67,12 @@ def get_sentences_tokens_and_phrase_sentiments():
 
 
 def get_sentence_sentiments(tokens, phrase_sentiments):
+    """
+    Given sentence tokens, returns list of sentiment values
+    :param tokens:
+    :param phrase_sentiments:
+    :return:
+    """
     output = []
     for token in tokens:
         output.append(phrase_sentiments[token])
@@ -86,6 +80,12 @@ def get_sentence_sentiments(tokens, phrase_sentiments):
 
 
 def format_attrs(attrs, sentence):
+    """
+    Preprocesses the attributions shape and removes cls and sep tokens
+    :param attrs:
+    :param sentence:
+    :return:
+    """
     tokenized = tokenizer(sentence)
 
     if len(attrs.shape) == 2 and attrs.shape[0] == 1:
@@ -96,7 +96,12 @@ def format_attrs(attrs, sentence):
 
 
 def prepare_embeds_and_att_mask(sentence):
-    encoded = tokenizer(sentence, padding='max_length', max_length=512, truncation=True, return_tensors='pt')
+    """
+    Prepares attention mask and inputs embeds
+    :param sentence:
+    :return:
+    """
+    encoded = tokenizer(sentence, max_length=512, truncation=True, return_tensors='pt')
     attention_mask = encoded.data['attention_mask'].to(device)
     input_ids = torch.squeeze(encoded.data['input_ids']).to(device)
     input_embeds = torch.unsqueeze(torch.index_select(embeddings, 0, input_ids), 0).requires_grad_(True).to(device)
@@ -106,7 +111,12 @@ def prepare_embeds_and_att_mask(sentence):
 
 
 def prepare_input_ids_and_attention_mask(sentence):
-    encoded = tokenizer(sentence, padding='max_length', max_length=512, truncation=True, return_tensors='pt')
+    """
+    Prepares input ids and attention mask
+    :param sentence:
+    :return:
+    """
+    encoded = tokenizer(sentence, max_length=512, truncation=True, return_tensors='pt')
     attention_mask = encoded.data['attention_mask'].to(device)
     input_ids = encoded.data['input_ids'].to(device)
 
@@ -114,7 +124,11 @@ def prepare_input_ids_and_attention_mask(sentence):
 
 
 def create_neutral_baseline(sentence):
-    # we have baselines precomputed for all the lengths of test sentences, to that's ok
+    """
+    Loads a precomputed baseline for the given length
+    :param sentence:
+    :return:
+    """
     tokenized = tokenizer(sentence)
     length = len(tokenized.data['input_ids'])
 
@@ -124,6 +138,13 @@ def create_neutral_baseline(sentence):
 #   -----------------------------------------------------------------------------------------------
 
 def create_gradient_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
+    """
+    Generates gradient and gradient x input attributions
+    :param sentences:
+    :param target_indices:
+    :param target_dir:
+    :return:
+    """
     attrs = []
     for sentence, target_idx in zip(sentences, target_indices):
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
@@ -146,6 +167,15 @@ def create_gradient_attributions(sentences, target_indices, target_dir=CERTAIN_D
 
 
 def _do_ig(sentences, target_indices, steps, file, target_dir):
+    """
+    Generates integrated gradients attributions given the configuration
+    :param sentences:
+    :param target_indices:
+    :param steps:
+    :param file:
+    :param target_dir:
+    :return:
+    """
     attrs = []
     for sentence, target_idx in zip(sentences, target_indices):
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
@@ -159,18 +189,33 @@ def _do_ig(sentences, target_indices, steps, file, target_dir):
 
 
 def create_ig_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
+    """
+    Generates all the integrated gradient attributions
+    :param sentences:
+    :param target_indices:
+    :param target_dir:
+    :return:
+    """
     _do_ig(sentences, target_indices, 20, 'ig_20', target_dir)
     _do_ig(sentences, target_indices, 50, 'ig_50', target_dir)
     _do_ig(sentences, target_indices, 100, 'ig_100', target_dir)
-    _do_ig(sentences, target_indices, 200, 'ig_200', target_dir)
 
 
 def _do_sg(sentences, target_indices, samples, file, target_dir):
+    """
+    Generates smoothgrad attributions given the configuration
+    :param sentences:
+    :param target_indices:
+    :param samples:
+    :param file:
+    :param target_dir:
+    :return:
+    """
     attrs = []
     attrs_x_inputs = []
     for sentence, target_idx in zip(sentences, target_indices):
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
-        attr = sg_attributions(input_embeds, attention_mask, target_idx, model, samples, 0.2)
+        attr = sg_attributions(input_embeds, attention_mask, target_idx, model, samples, args['sg_noise'])
         attr_x_input = attr.to(device) * input_embeds
         attr_x_input = torch.squeeze(attr_x_input)
         attr = torch.squeeze(attr)
@@ -185,13 +230,26 @@ def _do_sg(sentences, target_indices, samples, file, target_dir):
 
 
 def create_smoothgrad_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
+    """
+    Generates all the smoothgrad attributions
+    :param sentences:
+    :param target_indices:
+    :param target_dir:
+    :return:
+    """
     _do_sg(sentences, target_indices, 20, 'sg_20', target_dir)
     _do_sg(sentences, target_indices, 50, 'sg_50', target_dir)
     _do_sg(sentences, target_indices, 100, 'sg_100', target_dir)
-    _do_sg(sentences, target_indices, 200, 'sg_200', target_dir)
 
 
 def create_relprop_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
+    """
+    Generates Chefer et al. attributions
+    :param sentences:
+    :param target_indices:
+    :param target_dir:
+    :return:
+    """
     attrs = []
     for sentence, target_idx in zip(sentences, target_indices):
         input_ids, attention_mask = prepare_input_ids_and_attention_mask(sentence)
@@ -222,7 +280,6 @@ def main():
     unsure_pred_sentences = []
 
     for sentence, tokens in zip(sentences, tokens):
-        # create_neutral_baseline(sentence)
         # first classify the sample
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
         res = model(inputs_embeds=input_embeds, attention_mask=attention_mask, return_logits=False, inputs_embeds_in_input_ids=False)
@@ -260,10 +317,10 @@ def main():
     create_relprop_attributions(correct_pred_sentences, correct_pred_indices)
 
     # create attributions for the correctly predicted but uncertain
-    create_gradient_attributions(correct_pred_sentences, correct_pred_indices, UNSURE_DIR)
-    create_smoothgrad_attributions(correct_pred_sentences, correct_pred_indices, UNSURE_DIR)
-    create_ig_attributions(correct_pred_sentences, correct_pred_indices, UNSURE_DIR)
-    create_relprop_attributions(correct_pred_sentences, correct_pred_indices, UNSURE_DIR)
+    create_gradient_attributions(unsure_pred_sentences, unsure_pred_indices, UNSURE_DIR)
+    create_smoothgrad_attributions(unsure_pred_sentences, unsure_pred_indices, UNSURE_DIR)
+    create_ig_attributions(unsure_pred_sentences, unsure_pred_indices, UNSURE_DIR)
+    create_relprop_attributions(unsure_pred_sentences, unsure_pred_indices, UNSURE_DIR)
 
     # print document counts
     print(f'Total documents: {len(sentences)}')
@@ -271,5 +328,31 @@ def main():
     print(f'Documents predicted certainly: {len(correct_pred_sentences)}')
     print(f'Documents predicted unsurely: {len(unsure_pred_sentences)}')
 
+
 if __name__ == '__main__':
+
+    # parse args
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--output_dir', default='output_sst_attrs', help='Attributions output directory')
+    parser.add_argument('--model_path', required=True, help='Trained model - loaded with from_pretrained')
+    parser.add_argument('--baselines_dir', required=True, help='Directory with baseline examples')
+    parser.add_argument('--sg_noise', required=False, type=float, default=0.15)
+    args = vars(parser.parse_args())
+
+    # set up names
+    OUTPUT_DIR = args['output_dir']
+    MODEL_PATH = args['model_path']
+    BASELINES_DIR = args['baselines_dir']
+
+    # prepare models
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, local_files_only=True)
+    model = BertSequenceClassifierSST.from_pretrained(MODEL_PATH, local_files_only=True)
+    model = model.to(device)
+    model.eval()
+    embeddings = model.bert.base_model.embeddings.word_embeddings.weight.data
+
+    relprop_explainer = Generator(model)
+
+    # finish setup and start generating
+    create_dirs()
     main()

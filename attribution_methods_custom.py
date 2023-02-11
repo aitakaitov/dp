@@ -41,12 +41,9 @@ def __ig_interpolate_samples(baseline, target, steps):
     return scaled_inputs
 
 
-def sg_attributions(inputs_embeds, attention_mask, target_idx, model, samples=50, noise_level=0.15):
-    stdev = (torch.max(inputs_embeds) - torch.min(inputs_embeds)) * noise_level
-    try:
-        length = list(attention_mask[0]).index(0) + 1
-    except ValueError:
-        length = 512
+def sg_attributions(inputs_embeds, attention_mask, target_idx, model, samples=50, stdev_spread=0.15):
+    stdev = (torch.max(inputs_embeds) - torch.min(inputs_embeds)) * stdev_spread
+    length = attention_mask.shape[1]
     samples = __sg_generate_samples(inputs_embeds, length, stdev, samples)
     gradients = torch.tensor([]).to('cpu')
     for sample in samples:
@@ -60,12 +57,10 @@ def sg_attributions(inputs_embeds, attention_mask, target_idx, model, samples=50
 
 def __sg_generate_samples(inputs_embeds, length, stdev, samples):
     noisy_samples = []
-    padding = torch.zeros((1, 512 - length, inputs_embeds.shape[2])).to('cpu')
     for i in range(samples):
         means = torch.zeros((1, length, inputs_embeds.shape[2])).to('cpu')
         stdevs = torch.full((1, length, inputs_embeds.shape[2]), float(stdev)).to('cpu')
         noise = torch.normal(means, stdevs).to('cpu')
-        noise = torch.cat((noise, padding), dim=1)
         sample = inputs_embeds.to('cpu') + noise
         noisy_samples.append(sample)
 
