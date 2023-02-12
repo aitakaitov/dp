@@ -12,12 +12,8 @@ class NewsDataset(torch.utils.data.Dataset):
         self.texts = []
         self.tokenizer = tokenizer
         self.class_dict = classes_dict
-        self.baseline_sample_count = 500
         self.folds = []
         self.mode = 'train'
-        self.other_labels = []
-        self.other_texts = []
-        self.first_train_fold_index = 0
 
         for line in data.split('\n'):
             split_line = line.split('~')
@@ -32,24 +28,6 @@ class NewsDataset(torch.utils.data.Dataset):
             classes = [self.class_dict[clss] for clss in classes]
             label = torch.sum(one_hot(torch.tensor(classes, dtype=torch.long), len(self.class_dict.items())), dim=0)
             self.labels.append(torch.tensor(label, dtype=torch.float32))
-
-    def _add_baseline_samples(self):
-        encoded = self.tokenizer("", padding='max_length', max_length=512, truncation=True, return_tensors='pt')
-        input_ids_list = encoded.data['input_ids'][0].numpy().tolist()
-        pad_token_index = input_ids_list[2]
-        cls_token_index = input_ids_list[0]
-        sep_token_index = input_ids_list[1]
-        baseline_input_ids = torch.tensor([pad_token_index for _ in range(512)], dtype=torch.int)
-        baseline_input_ids[0] = cls_token_index
-        baseline_input_ids[511] = sep_token_index
-        attention_mask = torch.tensor([1 for _ in range(512)], dtype=torch.int)
-        baseline_label_index = self.class_dict['baseline']
-        baseline_label = [0 for _ in self.class_dict.items()]
-        baseline_label[baseline_label_index] = 1
-        baseline_label = torch.tensor(baseline_label, dtype=torch.int)
-        for i in range(self.baseline_sample_count):
-            self.texts.append([baseline_input_ids, attention_mask])
-            self.labels.append(baseline_label)
 
     def classes(self):
         return self.labels
