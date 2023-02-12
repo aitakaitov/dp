@@ -8,6 +8,7 @@ from attribution_methods_custom import gradient_attributions, ig_attributions, s
 from models.bert_512 import BertSequenceClassifierNews, ElectraSequenceClassifierNews, RobertaSequenceClassifierNews
 from BERT_explainability.modules.BERT.ExplanationGenerator import Generator
 from utils.list_utils import count_rec
+import utils.baselines
 
 import os
 
@@ -32,6 +33,24 @@ method_file_dict = {
     'sg_100_x_inputs':  'sg_100_x_inputs_attrs_custom.json',
     'relprop':  'relprop_attrs.json'
 }
+
+
+def prepare_noise_test():
+    method_file_dict.clear()
+    method_file_dict['sg_50_0.05'] = 'sg_50_0.05_attrs.json'
+    method_file_dict['sg_50_0.15'] = 'sg_50_0.15_attrs.json'
+    method_file_dict['sg_50_0.25'] = 'sg_50_0.25_attrs.json'
+    method_file_dict['sg_50_0.05_x_inputs'] = 'sg_50_0.05_x_inputs_attrs.json'
+    method_file_dict['sg_50_0.15_x_inputs'] = 'sg_50_0.15_x_inputs_attrs.json'
+    method_file_dict['sg_50_0.25_x_inputs'] = 'sg_50_0.25_x_inputs_attrs.json'
+
+
+def prepare_baseline_test():
+    method_file_dict.clear()
+    method_file_dict['ig_50_zero'] = 'ig_50_zero_attrs.json'
+    method_file_dict['ig_50_pad'] = 'ig_50_pad_attrs.json'
+    method_file_dict['ig_50_avg'] = 'ig_50_avg_attrs.json'
+    method_file_dict['ig_50_custom'] = 'ig_50_custom_attrs.json'
 
 #   -----------------------------------------------------------------------------------------------
 
@@ -135,15 +154,28 @@ def create_gradient_attributions(sentences, target_indices_list, target_dir=CERT
     file.close()
 
 
-def _do_ig(sentences, target_indices_list, steps, file, target_dir):
+def _do_ig(sentences, target_indices_list, steps, file, target_dir, baseline_type=None):
     file = open(os.path.join(args['output_dir'], target_dir, method_file_dict[file]), 'w+', encoding='utf-8')
     file.write('[\n')
+
+    average_emb = embeddings.mean(dim=1)
 
     for sentence, target_indices in zip(sentences, target_indices_list):
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
         attrs_temp = []
         for target_idx in target_indices:
-            baseline = create_neutral_baseline(sentence, tokenizer.pad_token)
+            if baseline_type is None:
+                baseline = create_neutral_baseline(sentence, tokenizer.pad_token)
+            elif baseline_type == 'avg':
+                baseline = utils.baselines.embedding_space_average_baseline(input_embeds, average_emb)
+            elif baseline_type == 'zero':
+                baseline = utils.baselines.zero_embedding_baseline(input_embeds)
+            elif baseline_type == 'pad':
+                baseline = utils.baselines.pad_baseline(input_embeds, embeddings[pad_token_index])
+            elif baseline_type == 'custom':
+                baseline = utils.baselines.prepared_baseline(input_embeds, args['baselines_dir'])
+            else:
+                raise RuntimeError(f'Unknown baseline type: {baseline_type}')
             attr = ig_attributions(input_embeds, attention_mask, target_idx, baseline, model, steps)
             attr = torch.squeeze(attr)
             attrs_temp.append(format_attrs(attr, sentence))
@@ -167,7 +199,14 @@ def create_ig_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
         _do_ig(sentences, target_indices, 100, 'ig_100', target_dir)
 
 
-def _do_sg(sentences, target_indices_list, samples, file, target_dir):
+def create_ig_baseline_test_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
+    _do_ig(sentences, target_indices, 50, 'ig_50_zero', target_dir, baseline_type='zero')
+    _do_ig(sentences, target_indices, 50, 'ig_50_pad', target_dir, baseline_type='pad')
+    _do_ig(sentences, target_indices, 50, 'ig_50_avg', target_dir, baseline_type='avg')
+    _do_ig(sentences, target_indices, 50, 'ig_50_custom', target_dir, baseline_type='custom')
+
+
+def _do_sg(sentences, target_indices_list, samples, file, target_dir, noise_level=None):
     f = open(os.path.join(args['output_dir'], target_dir, method_file_dict[file]), 'w+', encoding='utf-8')
     f.write('[\n')
 
@@ -179,7 +218,7 @@ def _do_sg(sentences, target_indices_list, samples, file, target_dir):
         temp_attrs = []
         temp_attrs_x_inputs = []
         for target_idx in target_indices:
-            attr = sg_attributions(inputs_embeds, attention_mask, target_idx, model, samples)
+            attr = sg_attributions(inputs_embeds, attention_mask, target_idx, model, samples, noise_level)
             attr_x_input = attr.to(device) * inputs_embeds
             attr_x_input = torch.squeeze(attr_x_input)
             attr = torch.squeeze(attr)
@@ -200,14 +239,20 @@ def _do_sg(sentences, target_indices_list, samples, file, target_dir):
 
 def create_smoothgrad_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
     if args['part'] == 'all':
-        _do_sg(sentences, target_indices, 20, 'sg_20', target_dir)
-        _do_sg(sentences, target_indices, 50, 'sg_50', target_dir)
-        _do_sg(sentences, target_indices, 100, 'sg_100', target_dir)
+        _do_sg(sentences, target_indices, 20, 'sg_20', target_dir, args['sg_noise'])
+        _do_sg(sentences, target_indices, 50, 'sg_50', target_dir, args['sg_noise'])
+        _do_sg(sentences, target_indices, 100, 'sg_100', target_dir, args['sg_noise'])
     elif args['part'] == 'g_sg20-50':
-        _do_sg(sentences, target_indices, 20, 'sg_20', target_dir)
-        _do_sg(sentences, target_indices, 50, 'sg_50', target_dir)
+        _do_sg(sentences, target_indices, 20, 'sg_20', target_dir, args['sg_noise'])
+        _do_sg(sentences, target_indices, 50, 'sg_50', target_dir, args['sg_noise'])
     elif args['part'] == 'sg100':
-        _do_sg(sentences, target_indices, 100, 'sg_100', target_dir)
+        _do_sg(sentences, target_indices, 100, 'sg_100', target_dir, args['sg_noise'])
+
+
+def create_smoothgrad_noise_test_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
+    _do_sg(sentences, target_indices, 50, 'sg_50_0.05', target_dir, 0.05)
+    _do_sg(sentences, target_indices, 50, 'sg_50_0.15', target_dir, 0.15)
+    _do_sg(sentences, target_indices, 50, 'sg_50_0.25', target_dir, 0.25)
 
 
 def create_relprop_attributions(sentences, target_indices_list, target_dir=CERTAIN_DIR):
@@ -300,19 +345,24 @@ def main():
     with open(os.path.join(args['output_dir'], 'method_file_dict.json'), 'w+', encoding='utf-8') as f:
         f.write(json.dumps(method_file_dict))
 
-    create_gradient_attributions(valid_documents_certain, target_indices_certain)
-    create_smoothgrad_attributions(valid_documents_certain, target_indices_certain)
-    create_ig_attributions(valid_documents_certain, target_indices_certain)
-
-    create_gradient_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
-    create_smoothgrad_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
-    create_ig_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
-
-    if do_relprop:
-        create_relprop_attributions(valid_documents_certain, target_indices_certain)
-        create_relprop_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+    if args['smoothgrad_noise_test']:
+        create_smoothgrad_noise_test_attributions(valid_documents_certain, target_indices_certain)
+    elif args['ig_baseline_test']:
+        create_ig_baseline_test_attributions(valid_documents_certain, target_indices_certain)
     else:
-        method_file_dict.pop('relprop')
+        create_gradient_attributions(valid_documents_certain, target_indices_certain)
+        create_smoothgrad_attributions(valid_documents_certain, target_indices_certain)
+        create_ig_attributions(valid_documents_certain, target_indices_certain)
+
+        create_gradient_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+        create_smoothgrad_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+        create_ig_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+
+        if do_relprop:
+            create_relprop_attributions(valid_documents_certain, target_indices_certain)
+            create_relprop_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+        else:
+            method_file_dict.pop('relprop')
 
     # print report
     print(f'Total labels: {count_rec(labels_short_enough)}')
@@ -326,7 +376,11 @@ if __name__ == '__main__':
     parser.add_argument('--output_dir', default='output_news_attrs', help='Attributions output directory')
     parser.add_argument('--model_path', required=True, help='Trained model')
     parser.add_argument('--part', required=False, default='all',
-                        help='Which split to compute - one of [g_sg20-50, sg100, sg200, rp_ig20-50, ig100, ig200, all]')
+                        help='Which split to compute - one of [g_sg20-50, sg100, rp_ig20-50, ig100, all]')
+    parser.add_argument('--sg_noise', required=False, type=float, default=0.15)
+    parser.add_argument('--smoothgrad_noise_test', required=False, default=False)
+    parser.add_argument('--ig_baseline_test', required=False, default=False)
+    parser.add_argument('--baselines_dir', required=False, default='')
 
     args = vars(parser.parse_args())
 
@@ -338,12 +392,7 @@ if __name__ == '__main__':
     config = AutoConfig.from_pretrained(args['model_path'])
 
     if any(['Electra' in arch for arch in config.architectures]):
-        if 'small-e-czech' in config.name_or_path:
-            # special case for our pretrained models as the tokenizer doesn't
-            # load properly
-            tokenizer = AutoTokenizer.from_pretrained('Seznam/small-e-czech')
-        else:
-            tokenizer = AutoTokenizer.from_pretrained(args['model_path'])
+        tokenizer = AutoTokenizer.from_pretrained(args['model_path'])
         model = ElectraSequenceClassifierNews.from_pretrained(args['model_path'])
         embeddings = model.electra.base_model.embeddings.word_embeddings.weight.data
     elif any(['Bert' in arch for arch in config.architectures]):
@@ -367,5 +416,10 @@ if __name__ == '__main__':
 
     model.eval()
     relprop_explainer = Generator(model)
+
+    if args['smoothgrad_noise_test']:
+        prepare_noise_test()
+    elif args['ig_baseline_test']:
+        prepare_baseline_test()
 
     main()
