@@ -81,7 +81,7 @@ if __name__ == '__main__':
     argparser.add_argument('--model_folder', type=str, required=True)
     argparser.add_argument('--output_dir', type=str, required=True)
     argparser.add_argument('--start', type=int, default=1, required=False)
-    argparser.add_argument('--lr', type=float, default=0.00001, required=False)
+    argparser.add_argument('--lr', type=float, default=1e-1, required=False)
     argparser.add_argument('--max', type=float, default=1e-2, required=False)
 
     args = vars(argparser.parse_args())

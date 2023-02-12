@@ -53,3 +53,4 @@ roberta_test
 baselines_batch_sst.py
 baselines_meta.sh
 datasets_ours/news/test.py
+baselines_batch_news.py
