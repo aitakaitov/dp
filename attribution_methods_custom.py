@@ -34,11 +34,7 @@ def ig_attributions(inputs_embeds, attention_mask, target_idx, baseline, model, 
 
 
 def __ig_interpolate_samples(baseline, target, steps):
-    try:
-        scaled_inputs = [(baseline + (float(i) / steps) * (target - baseline)).to('cpu') for i in range(0, steps + 1)]
-    except RuntimeError:
-        print()
-    return scaled_inputs
+    return [(baseline + (float(i) / steps) * (target - baseline)).to('cpu') for i in range(0, steps + 1)]
 
 
 def sg_attributions(inputs_embeds, attention_mask, target_idx, model, samples=50, stdev_spread=0.15):

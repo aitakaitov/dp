@@ -291,7 +291,7 @@ def main():
     unsure_pred_indices = []
     unsure_pred_sentences = []
 
-    for sentence, tokens in zip(sentences, tokens):
+    for sentence, tokens in zip(sentences[:100], tokens[:100]):
         # first classify the sample
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
         res = model(inputs_embeds=input_embeds, attention_mask=attention_mask, return_logits=False, inputs_embeds_in_input_ids=False)
@@ -319,7 +319,7 @@ def main():
     with open(os.path.join(args['output_dir'], UNSURE_DIR, 'sst_bert_tokens.json'), 'w+', encoding='utf-8') as f:
         f.write(json.dumps({'bert_tokens': bert_tokens_unsure, 'sst_tokens': sst_tokens_unsure}))
 
-    with open(os.path.join(args['output_dir'], '/method_file_dict.json'), 'w+', encoding='utf-8') as f:
+    with open(os.path.join(args['output_dir'], 'method_file_dict.json'), 'w+', encoding='utf-8') as f:
         f.write(json.dumps(method_file_dict))
 
     if args['smoothgrad_noise_test']:

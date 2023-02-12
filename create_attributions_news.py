@@ -158,7 +158,7 @@ def _do_ig(sentences, target_indices_list, steps, file, target_dir, baseline_typ
     file = open(os.path.join(args['output_dir'], target_dir, method_file_dict[file]), 'w+', encoding='utf-8')
     file.write('[\n')
 
-    average_emb = embeddings.mean(dim=1)
+    average_emb = embeddings.mean(dim=0)
 
     for sentence, target_indices in zip(sentences, target_indices_list):
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
@@ -200,10 +200,10 @@ def create_ig_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
 
 
 def create_ig_baseline_test_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
-    _do_ig(sentences, target_indices, 50, 'ig_50_zero', target_dir, baseline_type='zero')
-    _do_ig(sentences, target_indices, 50, 'ig_50_pad', target_dir, baseline_type='pad')
+    #_do_ig(sentences, target_indices, 50, 'ig_50_zero', target_dir, baseline_type='zero')
+    #_do_ig(sentences, target_indices, 50, 'ig_50_pad', target_dir, baseline_type='pad')
     _do_ig(sentences, target_indices, 50, 'ig_50_avg', target_dir, baseline_type='avg')
-    _do_ig(sentences, target_indices, 50, 'ig_50_custom', target_dir, baseline_type='custom')
+    #_do_ig(sentences, target_indices, 50, 'ig_50_custom', target_dir, baseline_type='custom')
 
 
 def _do_sg(sentences, target_indices_list, samples, file, target_dir, noise_level=None):
@@ -386,6 +386,8 @@ if __name__ == '__main__':
 
     try:
         os.mkdir(args['output_dir'])
+        os.mkdir(os.path.join(args['output_dir'], CERTAIN_DIR))
+        os.mkdir(os.path.join(args['output_dir'], UNSURE_DIR))
     except OSError:
         pass
 
@@ -406,7 +408,6 @@ if __name__ == '__main__':
     else:
         raise RuntimeError(f'Architectures {config.architectures} not supported')
 
-    ids = tokenizer.encode(tokenizer.pad_token_id)
     pad_token_index = tokenizer.pad_token_id
     cls_token_index = tokenizer.cls_token_id
     sep_token_index = tokenizer.sep_token_id
