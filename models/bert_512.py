@@ -6,12 +6,6 @@ from BERT_explainability.modules.BERT.BERT import BertModel
 from BERT_explainability.modules.BERT.Electra import ElectraClassificationHead
 
 
-def load_model():
-    config = torch.hub.load('huggingface/pytorch-transformers', 'config', 'bert-base-uncased')
-    model = torch.hub.load('huggingface/pytorch-transformers', 'model', 'bert-base-uncased', config=config)
-    return model
-
-
 class BertSequenceClassifierSST(transformers.BertForSequenceClassification):
     def __init__(self, config):
         super().__init__(config)
