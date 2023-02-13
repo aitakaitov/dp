@@ -14,20 +14,27 @@ def clean(sentence):
 
 
 def create():
+    with open('test.csv', 'r', encoding='utf-8') as f:
+        lines = f.readlines()[1:]
+
     with open('datasetSentences.txt', 'r', encoding='utf-8') as f:
+        sentence_id_dict = {}
         sentences = f.readlines()[1:]
         for i in range(len(sentences)):
+            sentence_id_dict[clean(sentences[i]).strip().split('\t')[1]] = i + 1
             sentences[i] = clean(sentences[i])
 
     with open('SOStr.txt', 'r', encoding='utf-8') as f:
         tokens = f.readlines()
 
     processed_pairs = []
-    for i in range(len(sentences)):
-        split = tokens[i].strip().split('|')
-        processed_pairs.append([sentences[i].split('\t')[1], split])
+    for line in lines:
+        sentence = line.strip().split('\t')[0]
+        _id = sentence_id_dict[sentence]
+        split = tokens[_id - 1].strip().split('|')
+        processed_pairs.append([sentence, split])
 
-    with open('sentences_tokens.json', 'w+', encoding='utf-8') as f:
+    with open('sentences_tokens_test.json', 'w+', encoding='utf-8') as f:
         f.write(json.dumps(processed_pairs))
 
 
