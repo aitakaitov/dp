@@ -200,10 +200,10 @@ def create_ig_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
 
 
 def create_ig_baseline_test_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
-    #_do_ig(sentences, target_indices, 50, 'ig_50_zero', target_dir, baseline_type='zero')
-    #_do_ig(sentences, target_indices, 50, 'ig_50_pad', target_dir, baseline_type='pad')
+    _do_ig(sentences, target_indices, 50, 'ig_50_zero', target_dir, baseline_type='zero')
+    _do_ig(sentences, target_indices, 50, 'ig_50_pad', target_dir, baseline_type='pad')
     _do_ig(sentences, target_indices, 50, 'ig_50_avg', target_dir, baseline_type='avg')
-    #_do_ig(sentences, target_indices, 50, 'ig_50_custom', target_dir, baseline_type='custom')
+    _do_ig(sentences, target_indices, 50, 'ig_50_custom', target_dir, baseline_type='custom')
 
 
 def _do_sg(sentences, target_indices_list, samples, file, target_dir, noise_level=None):
@@ -295,7 +295,7 @@ def main():
     # list for counting the actually valid labels
     labels_short_enough = []
 
-    for document, label in zip(documents[:100], labels[:100]):
+    for document, label in zip(documents, labels):
         # check the length - no longer than 512 tokens
         if len(tokenizer.tokenize(document)) + 2 > 512:
             continue

@@ -22,12 +22,12 @@ def main(args: dict):
         embeddings = model.bert.base_model.embeddings.word_embeddings.weight.data
 
     elif any('Electra' in arch for arch in config.architectures):
-        model = transformers.ElectraForSequenceClassification.from_pretrained(args['model_folder'], num_labels=class_count + 1,
+        model = transformers.ElectraForSequenceClassification.from_pretrained(args['model_folder'], num_labels=class_count,
                                                                 local_files_only=True).to(device)
         embeddings = model.electra.base_model.embeddings.word_embeddings.weight.data
 
     elif any('Roberta' in arch for arch in config.architectures):
-        model = transformers.RobertaForSequenceClassification.from_pretrained(args['model_folder'], num_labels=class_count,
+        model = transformers.XLMRobertaForSequenceClassification.from_pretrained(args['model_folder'], num_labels=class_count,
                                                               local_files_only=True).to(device)
         embeddings = model.roberta.base_model.embeddings.word_embeddings.weight.data
 
@@ -44,7 +44,7 @@ def main(args: dict):
 
     os.makedirs(args['output_dir'], exist_ok=True)
 
-    target_label = torch.zeros(1, class_count + 1).to(device)
+    target_label = torch.zeros(1, class_count).to(device)
     loss_fn = torch.nn.BCEWithLogitsLoss().to(device)
     sigmoid = torch.nn.Sigmoid().to(device)
 

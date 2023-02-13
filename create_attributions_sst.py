@@ -57,7 +57,7 @@ def get_sentences_tokens_and_phrase_sentiments():
     Loads the needed SST dataset features
     :return:
     """
-    with open(os.path.join(args['dataset_dir'], 'sentences_tokens_orig_test_no_neutral.json'), 'r', encoding='utf-8') as f:
+    with open(os.path.join(args['dataset_dir'], 'sentences_tokens_test.json'), 'r', encoding='utf-8') as f:
         sentences_tokens = json.loads(f.read())
 
     with open(os.path.join(args['dataset_dir'], 'phrase_sentiments.json'), 'r', encoding='utf-8') as f:
@@ -291,7 +291,7 @@ def main():
     unsure_pred_indices = []
     unsure_pred_sentences = []
 
-    for sentence, tokens in zip(sentences[:100], tokens[:100]):
+    for sentence, tokens in zip(sentences, tokens):
         # first classify the sample
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
         res = model(inputs_embeds=input_embeds, attention_mask=attention_mask, return_logits=False, inputs_embeds_in_input_ids=False)

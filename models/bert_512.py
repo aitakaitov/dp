@@ -146,7 +146,7 @@ class BertSequenceClassifierNews(transformers.BertForSequenceClassification, tra
         return cam
 
 
-class RobertaSequenceClassifierNews(transformers.RobertaForSequenceClassification):
+class RobertaSequenceClassifierNews(transformers.XLMRobertaForSequenceClassification):
     def __init__(self, config):
         super().__init__(config)
         self.sigmoid = Sigmoid()
