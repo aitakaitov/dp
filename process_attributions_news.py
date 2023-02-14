@@ -61,7 +61,7 @@ def remove_accents(string):
 
 
 def get_method_file_dict():
-    return load_json(str(os.path.join(ATTRS_DIR, args.pred_type, 'method_file_dict_custom.json')))
+    return load_json(str(os.path.join(ATTRS_DIR, 'method_file_dict.json')))
 
 
 def get_tokens():
@@ -143,7 +143,7 @@ def generate_random_attrs(method_file_dict):
     attrs = load_json(str(os.path.join(ATTRS_DIR, args.pred_type, attrs_file)))
     random_attrs = []
 
-    for sample in attrs[0]:
+    for sample in attrs:
         sample_random = []
         for target_index in sample:
             shape = np.array(target_index).shape

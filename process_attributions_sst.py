@@ -18,10 +18,11 @@ parser.add_argument('--pred_type', required=False, default='certain', help='One 
 
 args = parser.parse_args()
 
+uncased_models = ['mini', 'small', 'medium']
 
 OUTPUT_FILE = args.output_file
 ATTRS_DIR = args.attrs_dir
-LOWERCASE_SST = True if 'uncased' in ATTRS_DIR else False
+LOWERCASE_SST = any(m in ATTRS_DIR for m in uncased_models)
 
 MINIMAL_TOKEN_COUNT = 12
 
@@ -110,7 +111,7 @@ def generate_random_attrs(method_file_dict):
     attrs = load_json(os.path.join(ATTRS_DIR, CERTAIN_DIR, method_file_dict[method]))
     random_attrs = []
 
-    for attr in attrs[0]:
+    for attr in attrs:
         shape = np.array(attr).shape
         r = np.random.uniform(-0.5, 0.5, shape)
         random_attrs.append(r.tolist())
@@ -185,13 +186,10 @@ def preprocess_token_attrs(sst_bert_tokens: dict, attributions: list):
                     sst_temp = remove_accents(sst[sst_index])
                     while temp != sst_temp:
                         bert_index += 1
-                        try:
-                            if bert[bert_index][0] == '#':
-                                temp += bert[bert_index][2:]
-                            else:
-                                temp += bert[bert_index]
-                        except IndexError:
-                            a = 0
+                        if bert[bert_index][0] == '#':
+                            temp += bert[bert_index][2:]
+                        else:
+                            temp += bert[bert_index]
                     bert_index += 1
                 size = bert_index - start
                 _sum = 0

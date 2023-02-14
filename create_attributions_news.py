@@ -63,10 +63,10 @@ def parse_csv_line(line: str):
 
 
 def get_data():
-    with open('datasets_ours/news/classes.json', 'r', encoding='utf-8') as f:
+    with open(os.path.join(args['dataset_dir'], 'classes.json'), 'r', encoding='utf-8') as f:
         class_dict = json.loads(f.read())
 
-    with open('datasets_ours/news/test.csv', 'r', encoding='utf-8') as f:
+    with open(os.path.join(args['dataset_dir'], 'test.csv'), 'r', encoding='utf-8') as f:
         lines = f.readlines()
 
     samples = []
@@ -381,6 +381,7 @@ if __name__ == '__main__':
     parser.add_argument('--smoothgrad_noise_test', required=False, default=False)
     parser.add_argument('--ig_baseline_test', required=False, default=False)
     parser.add_argument('--baselines_dir', required=False, default='')
+    parser.add_argument('--dataset_dir', required=False, default='datasets_ours/news')
 
     args = vars(parser.parse_args())
 
