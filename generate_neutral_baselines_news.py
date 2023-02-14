@@ -55,9 +55,7 @@ def main(args: dict):
         attention_mask = torch.tensor([arr]).to(device)
 
         # generate random embeddings and add padding embeddings
-        rnd = torch.randn((1, length, embedding_dimensions), dtype=torch.float32).to(device)
-        padding = torch.unsqueeze(padding_embedding.repeat((512 - length, 1)), 0).to(device)
-        baseline = torch.cat((rnd, padding), 1).to(device).requires_grad_(True)
+        baseline = torch.randn((1, length, embedding_dimensions), dtype=torch.float32).to(device)
 
         optimizer = torch.optim.Adam([baseline], lr=args['lr'])
 

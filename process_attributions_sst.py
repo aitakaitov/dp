@@ -10,20 +10,6 @@ np.random.seed(42)
 CERTAIN_DIR = 'certain'
 UNSURE_DIR = 'unsure'
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--attrs_dir', required=True, help='Output directory of the create_attributions_sst script')
-parser.add_argument('--output_file', default='metrics.csv', help='File to write the results to')
-parser.add_argument('--positive_only', default=False, help='If True, negative attributions zeroed, else Pos/Neg attributions')
-parser.add_argument('--pred_type', required=False, default='certain', help='One of [certain, unsure]')
-
-args = parser.parse_args()
-
-uncased_models = ['mini', 'small', 'medium']
-
-OUTPUT_FILE = args.output_file
-ATTRS_DIR = args.attrs_dir
-LOWERCASE_SST = any(m in ATTRS_DIR for m in uncased_models)
-
 MINIMAL_TOKEN_COUNT = 12
 
 accent_dict = {
@@ -70,25 +56,11 @@ def remove_accents(string):
 
 
 def get_method_file_dict():
-    return load_json(ATTRS_DIR + '/method_file_dict.json')
+    return load_json(args['attrs_dir'] + '/method_file_dict.json')
 
 
 def get_tokens():
-    return load_json(os.path.join(ATTRS_DIR, args.pred_type, 'sst_bert_tokens.json'))
-
-
-def to_abs_values(values):
-    return rec_abs(values)
-
-
-def rec_abs(a):
-    new_list = []
-    for el in a:
-        if isinstance(el, list):
-            new_list.append(rec_abs(el))
-        else:
-            new_list.append(np.abs(el))
-    return new_list
+    return load_json(os.path.join(args['attrs_dir'], args['pred_type'], 'sst_bert_tokens.json'))
 
 
 def remove_negative_values(values):
@@ -108,7 +80,7 @@ def rec_remove_neg(values):
 def generate_random_attrs(method_file_dict):
     # choose the first attrs file to get the dimensions of the attributions
     method = 'grads'
-    attrs = load_json(os.path.join(ATTRS_DIR, CERTAIN_DIR, method_file_dict[method]))
+    attrs = load_json(os.path.join(args['attrs_dir'], CERTAIN_DIR, method_file_dict[method]))
     random_attrs = []
 
     for attr in attrs:
@@ -116,7 +88,7 @@ def generate_random_attrs(method_file_dict):
         r = np.random.uniform(-0.5, 0.5, shape)
         random_attrs.append(r.tolist())
 
-    with open(os.path.join(ATTRS_DIR, args.pred_type, 'random.json'), 'w+', encoding='utf-8') as f:
+    with open(os.path.join(args['attrs_dir'], args['pred_type'], 'random.json'), 'w+', encoding='utf-8') as f:
         f.write(json.dumps(random_attrs))
 
     method_file_dict['random'] = 'random.json'
@@ -174,7 +146,7 @@ def preprocess_token_attrs(sst_bert_tokens: dict, attributions: list):
                 temp = bert[bert_index]
                 start = bert_index
 
-                if not LOWERCASE_SST:
+                if not args['lowercase_sst']:
                     while temp != sst[sst_index]:
                         bert_index += 1
                         if bert[bert_index][0] == '#':
@@ -303,7 +275,7 @@ def get_min_k_indices(attrs, k):
 
 def eval_top_k(bert_attrs, sst_attrs, label, K):
     # compare top k
-    if label == 1 or args.positive_only:
+    if label == 1 or args['positive_only']:
         top_bert_indices = get_max_k_indices(bert_attrs, K)
         top_sst_indices = get_max_k_indices(sst_attrs, K)
     else:
@@ -345,7 +317,7 @@ def process_method(bert_attrs: list, sst_attrs: list, short_samples_indices: lis
     bert_attrs = scale_shift_attrs(bert_attrs)
     bert_attrs = preprocess_token_attrs(sst_bert_tokens, bert_attrs)
 
-    if args.positive_only:
+    if args['positive_only']:
         bert_attrs = remove_negative_values(bert_attrs)
 
     # evaluate the preprocessed attributions
@@ -371,7 +343,7 @@ def process_method(bert_attrs: list, sst_attrs: list, short_samples_indices: lis
 
 
 def main():
-    output_csv_file = open(OUTPUT_FILE, 'w+', encoding='utf-8')
+    output_csv_file = open(args['output_file'], 'w+', encoding='utf-8')
 
     method_file_dict = get_method_file_dict()
     generate_random_attrs(method_file_dict)
@@ -382,19 +354,19 @@ def main():
     sst_attrs = scale_sst_attrs(sst_attrs)
     short_sample_indices = get_short_sample_indices(sst_bert_tokens)
 
-    if args.positive_only:
+    if args['positive_only']:
         sst_attrs = remove_negative_values(sst_attrs)
 
-    if LOWERCASE_SST:
+    if args['lowercase_sst']:
         sst_bert_tokens['sst_tokens'] = lowercase_sst_tokens(sst_bert_tokens['sst_tokens'])
 
     output_csv_file.write('method;top1;top3;top5\n')
     # process attributions for each method
     for method, file in method_file_dict.items():
-        if not args.positive_only and method == 'relprop':
+        if not args['positive_only'] and method == 'relprop':
             continue
         
-        attrs = load_json(str(os.path.join(ATTRS_DIR, args.pred_type, file)))
+        attrs = load_json(str(os.path.join(args['attrs_dir'], args['pred_type'], file)))
 
         evals = process_method(attrs, sst_attrs, short_sample_indices, sst_bert_tokens, sst_labels)
         output_csv_file.write(f'{method};' +
@@ -405,4 +377,16 @@ def main():
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--attrs_dir', required=True, help='Output directory of the create_attributions_sst script')
+    parser.add_argument('--output_file', default='metrics.csv', help='File to write the results to')
+    parser.add_argument('--positive_only', default=False,
+                        help='If True, negative attributions zeroed, else Pos/Neg attributions')
+    parser.add_argument('--pred_type', required=False, default='certain', help='One of [certain, unsure]')
+    parser.add_argument('--uncased', required=False, default=False, help='Set to True for uncased models')
+    args = vars(parser.parse_args())
+
+    uncased_models = ['mini', 'small', 'medium']
+    args['lowercase_sst'] = any(m in args['attrs_dir'] for m in uncased_models) or args['uncased']
+
     main()

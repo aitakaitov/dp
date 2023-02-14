@@ -7,17 +7,6 @@ from utils.stemming import cz_stem
 
 np.random.seed(42)
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--attrs_dir', required=True, help='Output directory of the create_attributions_sst script')
-parser.add_argument('--output_file', default='metrics.csv', help='File to write the results to')
-parser.add_argument('--positive_only', default=False, help='If True, negative attributions are zeroed, else Pos/Neg attributions')
-parser.add_argument('--pred_type', required=False, default='certain', help='One of [certain, unsure]')
-
-args = parser.parse_args()
-
-OUTPUT_FILE = args.output_file
-ATTRS_DIR = args.attrs_dir
-
 PMI_CUTOFF = 5
 WORD_COUNT_CUTOFF = 75
 
@@ -61,15 +50,15 @@ def remove_accents(string):
 
 
 def get_method_file_dict():
-    return load_json(str(os.path.join(ATTRS_DIR, 'method_file_dict.json')))
+    return load_json(str(os.path.join(args['attrs_dir'], 'method_file_dict.json')))
 
 
 def get_tokens():
-    return load_json(str(os.path.join(ATTRS_DIR, args.pred_type, 'bert_tokens.json')))
+    return load_json(str(os.path.join(args['attrs_dir'], args['pred_type'], 'bert_tokens.json')))
 
 
 def get_target_indices():
-    return load_json(str(os.path.join(ATTRS_DIR, args.pred_type, 'target_indices.json')))
+    return load_json(str(os.path.join(args['attrs_dir'], args['pred_type'], 'target_indices.json')))
 
 
 def get_classes():
@@ -140,7 +129,7 @@ def generate_random_attrs(method_file_dict):
     # choose the first attrs file to get the dimensions of the attributions
     method = 'grads'
     attrs_file = method_file_dict[method]
-    attrs = load_json(str(os.path.join(ATTRS_DIR, args.pred_type, attrs_file)))
+    attrs = load_json(str(os.path.join(args['attrs_dir'], args['pred_type'], attrs_file)))
     random_attrs = []
 
     for sample in attrs:
@@ -151,7 +140,7 @@ def generate_random_attrs(method_file_dict):
             sample_random.append(r.tolist())
         random_attrs.append(sample_random)
 
-    with open(os.path.join(ATTRS_DIR, args.pred_type, 'random.json'), 'w+', encoding='utf-8') as f:
+    with open(os.path.join(args['attrs_dir'], args['pred_type'], 'random.json'), 'w+', encoding='utf-8') as f:
         f.write(json.dumps(random_attrs))
 
     method_file_dict['random'] = 'random.json'
@@ -271,7 +260,7 @@ def process_method(bert_attrs: list, bert_tokens: list, class_words_dict: dict, 
     bert_attrs = merge_embedding_attrs(bert_attrs)
     bert_attrs, bert_tokens = preprocess_token_attrs(bert_tokens, bert_attrs)
 
-    if args.positive_only:
+    if args['positive_only']:
         bert_attrs = remove_negative_values(bert_attrs)
 
     # evaluate the preprocessed attributions
@@ -298,7 +287,7 @@ def process_method(bert_attrs: list, bert_tokens: list, class_words_dict: dict, 
 
 
 def main():
-    output_csv_file = open(OUTPUT_FILE, 'w+', encoding='utf-8')
+    output_csv_file = open(args['output_file'], 'w+', encoding='utf-8')
 
     method_file_dict = get_method_file_dict()
     generate_random_attrs(method_file_dict)
@@ -310,10 +299,10 @@ def main():
     output_csv_file.write('method;top5;top10;top15\n')
     # process attributions for each method
     for method, file in method_file_dict.items():
-        if not args.positive_only and method == 'relprop':
+        if not args['positive_only'] and method == 'relprop':
             continue
         
-        attrs = load_json(os.path.join(ATTRS_DIR, args.pred_type, file))
+        attrs = load_json(os.path.join(args['attrs_dir'], args['pred_type'], file))
 
         evals = process_method(attrs, bert_tokens, classes_significant_words_dict, target_indices, invalid_class_indices)
         output_csv_file.write(f'{method};' +
@@ -323,4 +312,12 @@ def main():
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--attrs_dir', required=True, help='Output directory of the create_attributions_sst script')
+    parser.add_argument('--output_file', default='metrics.csv', help='File to write the results to')
+    parser.add_argument('--positive_only', default=False,
+                        help='If True, negative attributions are zeroed, else Pos/Neg attributions')
+    parser.add_argument('--pred_type', required=False, default='certain', help='One of [certain, unsure]')
+
+    args = vars(parser.parse_args())
     main()

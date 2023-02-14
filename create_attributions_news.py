@@ -173,7 +173,7 @@ def _do_ig(sentences, target_indices_list, steps, file, target_dir, baseline_typ
             elif baseline_type == 'pad':
                 baseline = utils.baselines.pad_baseline(input_embeds, embeddings[pad_token_index])
             elif baseline_type == 'custom':
-                baseline = utils.baselines.prepared_baseline(input_embeds, args['baselines_dir'])
+                baseline = utils.baselines.prepared_baseline(input_embeds, args['baselines_dir']).to(device)
             else:
                 raise RuntimeError(f'Unknown baseline type: {baseline_type}')
             attr = ig_attributions(input_embeds, attention_mask, target_idx, baseline, model, steps)
@@ -405,7 +405,7 @@ if __name__ == '__main__':
     elif any(['Roberta' in arch for arch in config.architectures]):
         tokenizer = AutoTokenizer.from_pretrained(args['model_path'])
         model = RobertaSequenceClassifierNews.from_pretrained(args['model_path'])
-        embeddings = model.bert.base_model.embeddings.word_embeddings.weight.data
+        embeddings = model.roberta.base_model.embeddings.word_embeddings.weight.data
     else:
         raise RuntimeError(f'Architectures {config.architectures} not supported')
 
