@@ -127,9 +127,8 @@ def rec_remove_neg(values):
 
 def generate_random_attrs(method_file_dict):
     # choose the first attrs file to get the dimensions of the attributions
-    method = 'grads'
-    attrs_file = method_file_dict[method]
-    attrs = load_json(str(os.path.join(args['attrs_dir'], args['pred_type'], attrs_file)))
+    method = method_file_dict[list(method_file_dict.keys())[0]]
+    attrs = load_json(str(os.path.join(args['attrs_dir'], args['pred_type'], method)))
     random_attrs = []
 
     for sample in attrs:
