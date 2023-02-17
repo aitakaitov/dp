@@ -34,6 +34,51 @@ method_file_dict = {
     'relprop':  'relprop_attrs.json'
 }
 
+sg_noise_configs = {
+    'bert-base-cased': 0.05,
+    'bert-medium': 0.05,
+    'bert-small': 0.05,
+    'bert-mini': 0.05
+}
+
+sg_x_i_noise_configs = {
+    'bert-base-cased': 0.05,
+    'bert-medium': 0.05,
+    'bert-small': 0.05,
+    'bert-mini': 0.15
+}
+
+ig_baseline_configs = {
+    'bert-base-cased': 'zero',
+    'bert-medium': 'zero',
+    'bert-small': 'avg',
+    'bert-mini': 'pad'
+}
+
+
+def get_sg_noise(model_path):
+    for k in sg_noise_configs.keys():
+        if k in model_path:
+            return sg_noise_configs[k]
+
+    raise RuntimeError(f'Model {model_path} is not supported with --use_predefined_hp set to True')
+
+
+def get_sg_x_i_noise(model_path):
+    for k in sg_x_i_noise_configs.keys():
+        if k in model_path:
+            return sg_x_i_noise_configs[k]
+
+    raise RuntimeError(f'Model {model_path} is not supported with --use_predefined_hp set to True')
+
+
+def get_ig_baseline(model_path):
+    for k in ig_baseline_configs.keys():
+        if k in model_path:
+            return ig_baseline_configs[k]
+
+    raise RuntimeError(f'Model {model_path} is not supported with --use_predefined_hp set to True')
+
 
 def create_dirs():
     os.mkdir(args['output_dir'])
@@ -49,6 +94,7 @@ def prepare_noise_test():
     method_file_dict['sg_50_0.05_x_inputs'] = 'sg_50_0.05_x_inputs_attrs.json'
     method_file_dict['sg_50_0.15_x_inputs'] = 'sg_50_0.15_x_inputs_attrs.json'
     method_file_dict['sg_50_0.25_x_inputs'] = 'sg_50_0.25_x_inputs_attrs.json'
+
 
 def prepare_baseline_test():
     method_file_dict.clear()
@@ -224,9 +270,11 @@ def create_ig_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
     :param target_dir:
     :return:
     """
-    _do_ig(sentences, target_indices, 20, 'ig_20', target_dir)
-    _do_ig(sentences, target_indices, 50, 'ig_50', target_dir)
-    _do_ig(sentences, target_indices, 100, 'ig_100', target_dir)
+    baseline_type = args['ig_baseline'] if not args['use_prepared_hp'] else get_ig_baseline(args['model_path'])
+
+    _do_ig(sentences, target_indices, 20, 'ig_20', target_dir, baseline_type)
+    _do_ig(sentences, target_indices, 50, 'ig_50', target_dir, baseline_type)
+    _do_ig(sentences, target_indices, 100, 'ig_100', target_dir, baseline_type)
 
 
 def create_ig_baseline_test_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
@@ -236,7 +284,7 @@ def create_ig_baseline_test_attributions(sentences, target_indices, target_dir=C
     _do_ig(sentences, target_indices, 50, 'ig_50_custom', target_dir, baseline_type='custom')
 
 
-def _do_sg(sentences, target_indices, samples, file, target_dir, noise_level=None):
+def _do_sg(sentences, target_indices, samples, file, target_dir, noise_level=None, noise_level_x_i=None):
     """
     Generates smoothgrad attributions given the configuration
     :param sentences:
@@ -246,16 +294,29 @@ def _do_sg(sentences, target_indices, samples, file, target_dir, noise_level=Non
     :param target_dir:
     :return:
     """
+    single_pass = noise_level == noise_level_x_i
+
     attrs = []
     attrs_x_inputs = []
     for sentence, target_idx in zip(sentences, target_indices):
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
         attr = sg_attributions(input_embeds, attention_mask, target_idx, model, samples, noise_level)
-        attr_x_input = attr.to(device) * input_embeds
-        attr_x_input = torch.squeeze(attr_x_input)
+
+        if single_pass:
+            attr_x_input = attr.to(device) * input_embeds
+            attr_x_input = torch.squeeze(attr_x_input)
+            attrs_x_inputs.append(format_attrs(attr_x_input, sentence))
+
         attr = torch.squeeze(attr)
         attrs.append(format_attrs(attr, sentence))
-        attrs_x_inputs.append(format_attrs(attr_x_input, sentence))
+
+    if not single_pass:
+        for sentence, target_idx in zip(sentences, target_indices):
+            input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
+            attr = sg_attributions(input_embeds, attention_mask, target_idx, model, samples, noise_level_x_i)
+            attr_x_input = attr.to(device) * input_embeds
+            attr_x_input = torch.squeeze(attr_x_input)
+            attrs_x_inputs.append(format_attrs(attr_x_input, sentence))
 
     with open(str(os.path.join(args['output_dir'], target_dir, method_file_dict[file])), 'w+', encoding='utf-8') as f:
         f.write(json.dumps(attrs))
@@ -272,9 +333,12 @@ def create_smoothgrad_attributions(sentences, target_indices, target_dir=CERTAIN
     :param target_dir:
     :return:
     """
-    _do_sg(sentences, target_indices, 20, 'sg_20', target_dir, args['sg_noise'])
-    _do_sg(sentences, target_indices, 50, 'sg_50', target_dir, args['sg_noise'])
-    _do_sg(sentences, target_indices, 100, 'sg_100', target_dir, args['sg_noise'])
+    sg_noise = args['sg_noise'] if not args['use_prepared_hp'] else get_sg_noise(args['model_path'])
+    sg_x_i_noise = args['sg_noise'] if not args['use_prepared_hp'] else get_sg_x_i_noise(args['model_path'])
+
+    _do_sg(sentences, target_indices, 20, 'sg_20', target_dir, sg_noise, sg_x_i_noise)
+    _do_sg(sentences, target_indices, 50, 'sg_50', target_dir, sg_noise, sg_x_i_noise)
+    _do_sg(sentences, target_indices, 100, 'sg_100', target_dir, sg_noise, sg_x_i_noise)
 
 
 def create_smoothgrad_noise_test_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
@@ -376,6 +440,10 @@ def main():
     print(f'Documents predicted unsurely: {len(unsure_pred_sentences)}')
 
 
+def parse_bool(s):
+    return s.lower() == 'true'
+
+
 if __name__ == '__main__':
 
     # parse args
@@ -384,7 +452,9 @@ if __name__ == '__main__':
     parser.add_argument('--model_path', required=True, help='Trained model - loaded with from_pretrained')
     parser.add_argument('--baselines_dir', required=True, help='Directory with baseline examples')
     parser.add_argument('--sg_noise', required=False, type=float, default=0.15)
-    parser.add_argument('--dataset_dir', required=False, type=str, default='datasets_ours/sst', help='The default'
+    parser.add_argument('--ig_baseline', required=False, default='zero', type=str)
+    parser.add_argument('--use_prepared_hp', required=False, default=False, type=parse_bool)
+    parser.add_argument('--dataset_dir', required=False, type=str, default='datasets_ours/sst wip', help='The default'
                                                                                                      'corresponds to'
                                                                                                      'the project'
                                                                                                      'root')
@@ -409,4 +479,5 @@ if __name__ == '__main__':
         prepare_noise_test()
     elif args['ig_baseline_test']:
         prepare_baseline_test()
+
     main()
