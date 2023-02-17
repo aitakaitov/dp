@@ -4,6 +4,7 @@ from transformers import AutoTokenizer
 from attribution_methods_custom import gradient_attributions, ig_attributions, sg_attributions
 from models.bert_512 import BertSequenceClassifierSST
 from BERT_explainability.modules.BERT.ExplanationGenerator import Generator
+import utils.baselines
 
 import os
 import argparse
@@ -48,6 +49,13 @@ def prepare_noise_test():
     method_file_dict['sg_50_0.05_x_inputs'] = 'sg_50_0.05_x_inputs_attrs.json'
     method_file_dict['sg_50_0.15_x_inputs'] = 'sg_50_0.15_x_inputs_attrs.json'
     method_file_dict['sg_50_0.25_x_inputs'] = 'sg_50_0.25_x_inputs_attrs.json'
+
+def prepare_baseline_test():
+    method_file_dict.clear()
+    method_file_dict['ig_50_zero'] = 'ig_50_zero_attrs.json'
+    method_file_dict['ig_50_pad'] = 'ig_50_pad_attrs.json'
+    method_file_dict['ig_50_avg'] = 'ig_50_avg_attrs.json'
+    method_file_dict['ig_50_custom'] = 'ig_50_custom_attrs.json'
 
 #   -----------------------------------------------------------------------------------------------
 
@@ -172,7 +180,7 @@ def create_gradient_attributions(sentences, target_indices, target_dir=CERTAIN_D
         f.write(json.dumps(attrs))
 
 
-def _do_ig(sentences, target_indices, steps, file, target_dir):
+def _do_ig(sentences, target_indices, steps, file, target_dir, baseline_type=None):
     """
     Generates integrated gradients attributions given the configuration
     :param sentences:
@@ -182,10 +190,24 @@ def _do_ig(sentences, target_indices, steps, file, target_dir):
     :param target_dir:
     :return:
     """
+    average_emb = embeddings.mean(dim=0)
+
     attrs = []
     for sentence, target_idx in zip(sentences, target_indices):
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
-        baseline = create_neutral_baseline(sentence)
+        if baseline_type is None:
+            baseline = create_neutral_baseline(sentence)
+        elif baseline_type == 'avg':
+            baseline = utils.baselines.embedding_space_average_baseline(input_embeds, average_emb)
+        elif baseline_type == 'zero':
+            baseline = utils.baselines.zero_embedding_baseline(input_embeds)
+        elif baseline_type == 'pad':
+            baseline = utils.baselines.pad_baseline(input_embeds, embeddings[pad_token_index])
+        elif baseline_type == 'custom':
+            baseline = utils.baselines.prepared_baseline(input_embeds, args['baselines_dir']).to(device)
+        else:
+            raise RuntimeError(f'Unknown baseline type: {baseline_type}')
+
         attr = ig_attributions(input_embeds, attention_mask, target_idx, baseline, model, steps)
         attr = torch.squeeze(attr)
         attrs.append(format_attrs(attr, sentence))
@@ -205,6 +227,13 @@ def create_ig_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
     _do_ig(sentences, target_indices, 20, 'ig_20', target_dir)
     _do_ig(sentences, target_indices, 50, 'ig_50', target_dir)
     _do_ig(sentences, target_indices, 100, 'ig_100', target_dir)
+
+
+def create_ig_baseline_test_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
+    _do_ig(sentences, target_indices, 50, 'ig_50_zero', target_dir, baseline_type='zero')
+    _do_ig(sentences, target_indices, 50, 'ig_50_pad', target_dir, baseline_type='pad')
+    _do_ig(sentences, target_indices, 50, 'ig_50_avg', target_dir, baseline_type='avg')
+    _do_ig(sentences, target_indices, 50, 'ig_50_custom', target_dir, baseline_type='custom')
 
 
 def _do_sg(sentences, target_indices, samples, file, target_dir, noise_level=None):
@@ -325,6 +354,8 @@ def main():
     if args['smoothgrad_noise_test']:
         # special case for testing noise effect on attributions
         create_smoothgrad_noise_test_attributions(correct_pred_sentences, correct_pred_indices)
+    elif args['ig_baseline_test']:
+        create_ig_baseline_test_attributions(correct_pred_sentences, correct_pred_indices)
     else:
         # create attributions for the correctly predicted and certain
         create_gradient_attributions(correct_pred_sentences, correct_pred_indices)
@@ -358,6 +389,7 @@ if __name__ == '__main__':
                                                                                                      'the project'
                                                                                                      'root')
     parser.add_argument('--smoothgrad_noise_test', required=False, default=False)
+    parser.add_argument('--ig_baseline_test', required=False, default=False)
     args = vars(parser.parse_args())
 
     # prepare models
@@ -367,10 +399,14 @@ if __name__ == '__main__':
     model.eval()
     embeddings = model.bert.base_model.embeddings.word_embeddings.weight.data
 
+    pad_token_index = tokenizer.pad_token_id
+
     relprop_explainer = Generator(model)
 
     # finish setup and start generating
     create_dirs()
     if args['smoothgrad_noise_test']:
         prepare_noise_test()
+    elif args['ig_baseline_test']:
+        prepare_baseline_test()
     main()

@@ -296,11 +296,9 @@ def main():
     target_indices = get_target_indices()
 
     output_csv_file.write('method;top5;top10;top15\n')
+    output_csv_file.flush()
     # process attributions for each method
     for method, file in method_file_dict.items():
-        if not args['positive_only'] and method == 'relprop':
-            continue
-        
         attrs = load_json(os.path.join(args['attrs_dir'], args['pred_type'], file))
 
         evals = process_method(attrs, bert_tokens, classes_significant_words_dict, target_indices, invalid_class_indices)
@@ -314,7 +312,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--attrs_dir', required=True, help='Output directory of the create_attributions_sst script')
     parser.add_argument('--output_file', default='metrics.csv', help='File to write the results to')
-    parser.add_argument('--positive_only', default=False,
+    parser.add_argument('--positive_only', default=True,
                         help='If True, negative attributions are zeroed, else Pos/Neg attributions')
     parser.add_argument('--pred_type', required=False, default='certain', help='One of [certain, unsure]')
 
