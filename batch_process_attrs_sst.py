@@ -5,7 +5,7 @@ import argparse
 def main():
     files = os.listdir(args['dir'])
     for file in files:
-        if 'attrs' not in file or 'csv' in file:
+        if 'attrs' not in file:
             continue
 
         command = f'python process_attributions_sst.py --attrs_dir {os.path.join(args["dir"], file)} ' \

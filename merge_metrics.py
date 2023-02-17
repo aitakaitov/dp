@@ -12,7 +12,7 @@ def get_matrix_size(csv_file):
         if line.strip() != '':
             rows += 1
 
-    cols = len(lines[0].strip().split(';'))
+    cols = len(lines[0].strip().split(';')) - 1
     return rows, cols
 
 
@@ -22,9 +22,9 @@ def extract_matrix(csv_file, rows, cols):
 
     matrix = [[0 for _ in range(cols)] for _ in range(rows)]
     for i in range(rows):
-        values = lines[i].strip().split(';')
+        values = lines[i].strip().split(';')[1:]
         for j in range(cols):
-            matrix[i][j] = float(values[i])
+            matrix[i][j] = float(values[j])
 
     return matrix
 
@@ -45,8 +45,9 @@ def extract_header_and_methods(csv_file):
 
 def merge_matrices(matrices):
     matrices_array = np.array(matrices)
-    merged = np.std(matrices_array, axis=0)
-    return merged.tolist()
+    stdev = np.std(matrices_array, axis=0)
+    avg = np.mean(matrices_array, axis=0)
+    return avg.tolist(), stdev.tolist()
 
     # for row in range(len(matrices[0])):
     #     for col in range(len(matrices[0][0])):
@@ -56,13 +57,13 @@ def merge_matrices(matrices):
     #         avg = _sum / len(matrices)
 
 
-def save_result(merged_matrix, header, methods, output_csv_file):
+def save_result(average_matrix, stdev_matrix, header, methods, output_csv_file):
     with open(output_csv_file, 'w+', encoding='utf-8') as f:
         f.write(';'.join(header) + ';\n')
         for i in range(len(methods)):
             f.write(f'{methods[i]};')
-            for j in range(len(merged_matrix[i])):
-                f.write(f'{merged_matrix[i][j]};')
+            for j in range(len(average_matrix[i])):
+                f.write(f'{average_matrix[i][j]:.3f} ± {stdev_matrix[i][j]:.3f};')
             f.write('\n')
 
 
@@ -75,8 +76,8 @@ def main():
     for csv_file in csv_files:
         matrices.append(extract_matrix(os.path.join(args['dir'], csv_file), rows, cols))
 
-    merged = merge_matrices(matrices)
-    save_result(merged, header, methods, args['output_csv_file'])
+    average, stdev = merge_matrices(matrices)
+    save_result(average, stdev, header, methods, args['output_file'])
 
 
 if __name__ == '__main__':
@@ -84,4 +85,5 @@ if __name__ == '__main__':
     parser.add_argument('--dir')
     parser.add_argument('--output_file')
     args = vars(parser.parse_args())
+    print(args)
     main()
