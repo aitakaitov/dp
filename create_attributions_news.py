@@ -20,17 +20,17 @@ UNSURE_DIR = 'unsure'
 UNSURE_PREDICTION_DELTA = 0.1
 
 method_file_dict = {
-    'grads': 'gradient_attrs_custom.json',
-    'grads_x_inputs':  'gradients_x_inputs_attrs_custom.json',
-    'ig_20':  'ig_20_attrs_custom.json',
-    'ig_50':  'ig_50_attrs_custom.json',
-    'ig_100':  'ig_100_attrs_custom.json',
-    'sg_20':  'sg_20_attrs_custom.json',
-    'sg_50':  'sg_50_attrs_custom.json',
-    'sg_100':  'sg_100_attrs_custom.json',
-    'sg_20_x_inputs':  'sg_20_x_inputs_attrs_custom.json',
-    'sg_50_x_inputs':  'sg_50_x_inputs_attrs_custom.json',
-    'sg_100_x_inputs':  'sg_100_x_inputs_attrs_custom.json',
+    'grads': 'gradient_attrs.json',
+    'grads_x_inputs':  'gradients_x_inputs_attrs.json',
+    'ig_20':  'ig_20_attrs.json',
+    'ig_50':  'ig_50_attrs.json',
+    'ig_100':  'ig_100_attrs.json',
+    'sg_20':  'sg_20_attrs.json',
+    'sg_50':  'sg_50_attrs.json',
+    'sg_100':  'sg_100_attrs.json',
+    'sg_20_x_inputs':  'sg_20_x_inputs_attrs.json',
+    'sg_50_x_inputs':  'sg_50_x_inputs_attrs.json',
+    'sg_100_x_inputs':  'sg_100_x_inputs_attrs.json',
     'relprop':  'relprop_attrs.json'
 }
 

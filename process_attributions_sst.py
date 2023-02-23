@@ -66,7 +66,7 @@ def get_tokens():
 def generate_random_attrs(method_file_dict):
     # choose the first attrs file to get the dimensions of the attributions
     method = method_file_dict[list(method_file_dict.keys())[0]]
-    attrs = load_json(os.path.join(args['attrs_dir'], CERTAIN_DIR, method))
+    attrs = load_json(os.path.join(args['attrs_dir'], args['pred_type'], method))
     random_attrs = []
 
     for attr in attrs:
@@ -361,7 +361,7 @@ if __name__ == '__main__':
     parser.add_argument('--uncased', required=False, default=False, help='Set to True for uncased models')
     args = vars(parser.parse_args())
 
-    uncased_models = ['mini', 'small', 'medium']
+    uncased_models = ['bert-mini', 'bert-small', 'bert-medium']
     args['lowercase_sst'] = any(m in args['attrs_dir'] for m in uncased_models) or args['uncased']
 
     main()

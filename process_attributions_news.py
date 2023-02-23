@@ -7,9 +7,6 @@ from utils.stemming import cz_stem
 
 np.random.seed(42)
 
-PMI_CUTOFF = 5
-WORD_COUNT_CUTOFF = 75
-
 accent_dict = {
     'á': 'a',
     'ć': 'c',
@@ -86,27 +83,39 @@ def get_class_word_dict():
         class_word_dict[idx] = []
         class_word_dict_temp[idx] = []
 
-    for i in range(len(lines)):
-        if i == 0:
-            continue
+    for i in range(1, len(lines)):
         split = lines[i].split(',')
+        # get class from the second column
         clss = split[1].lower()
+
+        # check if the class is actually one we are classifying
         if clss not in classes.keys():
             continue
-        pmi = float(split[6])
-        if pmi < PMI_CUTOFF:
+
+        # ignore phrases
+        word = split[2]
+        if len(word.split()) > 1:
             continue
+
+        # check PMI threshold
+        pmi = float(split[6])
+        if pmi < args['min_pmi']:
+            continue
+
+        # get the class index
         idx = classes[clss]
-        word = cz_stem(split[2].lower())                     # ignore phrases
-        if word not in class_word_dict_temp[idx] and len(word.split()) == 1:
+        # stem the keyword
+        word = cz_stem(word.lower())
+
+        # ignore duplicates
+        if word not in class_word_dict_temp[idx]:
             class_word_dict_temp[idx].append(word)
             class_word_dict[idx].append((word, pmi))
 
     invalid_class_indices = []
     for clss, words in class_word_dict.items():
-        if len(words) < WORD_COUNT_CUTOFF:
+        if len(words) < args['min_word_count']:
             invalid_class_indices.append(clss)
-        print(f'{clss} - {len(words)}')
 
     return class_word_dict, invalid_class_indices
 
@@ -315,6 +324,9 @@ if __name__ == '__main__':
     parser.add_argument('--positive_only', default=True,
                         help='If True, negative attributions are zeroed, else Pos/Neg attributions')
     parser.add_argument('--pred_type', required=False, default='certain', help='One of [certain, unsure]')
+
+    parser.add_argument('--min_word_count', required=False, default=30)     # 2x15 -- top15 metric would return 1.0 for 15 word documents, doubling the length as a minimum in an expert decision
+    parser.add_argument('--min_pmi', required=False, default=5.0)
 
     args = vars(parser.parse_args())
     main()
