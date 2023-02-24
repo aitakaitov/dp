@@ -1,7 +1,9 @@
 import torch
 import json
+
+import transformers
 from transformers import AutoTokenizer
-from attribution_methods_custom import gradient_attributions, ig_attributions, sg_attributions
+from attribution_methods_custom import gradient_attributions, ig_attributions, sg_attributions, kernel_shap_attributions
 from models.bert_512 import BertSequenceClassifierSST
 from BERT_explainability.modules.BERT.ExplanationGenerator import Generator
 import utils.baselines
@@ -31,6 +33,9 @@ method_file_dict = {
     'sg_20_x_inputs':  'sg_20_x_inputs_attrs.json',
     'sg_50_x_inputs':  'sg_50_x_inputs_attrs.json',
     'sg_100_x_inputs':  'sg_100_x_inputs_attrs.json',
+    'ks_100': 'ks_100_attrs.json',
+    'ks_200': 'ks_200_attrs.json',
+    'ks_500': 'ks_500_attrs.json',
     'relprop':  'relprop_attrs.json'
 }
 
@@ -81,9 +86,12 @@ def get_ig_baseline(model_path):
 
 
 def create_dirs():
-    os.mkdir(args['output_dir'])
-    os.mkdir(os.path.join(args['output_dir'], CERTAIN_DIR))
-    os.mkdir(os.path.join(args['output_dir'], UNSURE_DIR))
+    try:
+        os.mkdir(args['output_dir'])
+        os.mkdir(os.path.join(args['output_dir'], CERTAIN_DIR))
+        os.mkdir(os.path.join(args['output_dir'], UNSURE_DIR))
+    except OSError:
+        print(f'A directory already exists, proceeding')
 
 
 def prepare_noise_test():
@@ -96,12 +104,19 @@ def prepare_noise_test():
     method_file_dict['sg_50_0.25_x_inputs'] = 'sg_50_0.25_x_inputs_attrs.json'
 
 
-def prepare_baseline_test():
+def prepare_ig_baseline_test():
     method_file_dict.clear()
     method_file_dict['ig_50_zero'] = 'ig_50_zero_attrs.json'
     method_file_dict['ig_50_pad'] = 'ig_50_pad_attrs.json'
     method_file_dict['ig_50_avg'] = 'ig_50_avg_attrs.json'
     method_file_dict['ig_50_custom'] = 'ig_50_custom_attrs.json'
+
+
+def prepare_ks_baseline_test():
+    method_file_dict.clear()
+    method_file_dict['ks_200_pad'] = 'ks_200_pad_attrs.json'
+    method_file_dict['ks_200_mask'] = 'ks_200_mask_attrs.json'
+    method_file_dict['ks_200_unk'] = 'ks_200_unk_attrs.json'
 
 #   -----------------------------------------------------------------------------------------------
 
@@ -170,7 +185,7 @@ def prepare_embeds_and_att_mask(sentence):
     return input_embeds, attention_mask
 
 
-def prepare_input_ids_and_attention_mask(sentence):
+def prepare_input_ids_and_attention_mask(sentence, add_special_tokens=True):
     """
     Prepares input ids and attention mask
     :param sentence:
@@ -179,6 +194,12 @@ def prepare_input_ids_and_attention_mask(sentence):
     encoded = tokenizer(sentence, max_length=512, truncation=True, return_tensors='pt')
     attention_mask = encoded.data['attention_mask'].to(device)
     input_ids = encoded.data['input_ids'].to(device)
+
+    # a special case for kernel shap
+    if not add_special_tokens:
+        input_ids = torch.squeeze(input_ids)
+        input_ids = input_ids[1:-1]
+        input_ids = torch.unsqueeze(input_ids, dim=0)
 
     return input_ids, attention_mask
 
@@ -197,6 +218,36 @@ def create_neutral_baseline(sentence):
 
 #   -----------------------------------------------------------------------------------------------
 
+def _do_kernel_shap(sentences, target_indices, model, n_steps, baseline_idx, file, target_dir):
+    attrs = []
+    softmax = torch.nn.Softmax(dim=1)
+    cls_tensor = torch.tensor([[cls_token_index]]).to(device)
+    sep_tensor = torch.tensor([[sep_token_index]]).to(device)
+    for sentence, target_idx in zip(sentences, target_indices):
+        input_ids, attention_mask = prepare_input_ids_and_attention_mask(sentence, add_special_tokens=False)
+        attr = kernel_shap_attributions(input_ids, attention_mask, target_idx, model, baseline_idx,
+                                        cls_tensor, sep_tensor, softmax, n_steps)
+        attr = torch.squeeze(attr)  # no averaging as the attributions are w.r.t. input ids
+        attrs.append(format_attrs(attr, sentence))
+
+    with open(str(os.path.join(args['output_dir'], target_dir, method_file_dict[file])), 'w+', encoding='utf-8') as f:
+        f.write(json.dumps(attrs))
+
+
+def create_kernel_shap_attributions(sentences, target_indices, model, target_dir=CERTAIN_DIR):
+    # TODO use predefined config for baselines based on model names
+
+    _do_kernel_shap(sentences, target_indices, model, 100, 0, 'ks_100', target_dir)
+    _do_kernel_shap(sentences, target_indices, model, 200, 0, 'ks_200', target_dir)
+    _do_kernel_shap(sentences, target_indices, model, 500, 0, 'ks_500', target_dir)
+
+
+def create_kernel_shap_baseline_test_attributions(sentences, target_indices, model, target_dir=CERTAIN_DIR):
+    _do_kernel_shap(sentences, target_indices, model, 200, pad_token_index, 'ks_200_pad', target_dir)
+    _do_kernel_shap(sentences, target_indices, model, 200, unk_token_index, 'ks_200_unk', target_dir)
+    _do_kernel_shap(sentences, target_indices, model, 200, mask_token_index, 'ks_200_mask', target_dir)
+
+
 def create_gradient_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
     """
     Generates gradient and gradient x input attributions
@@ -208,8 +259,9 @@ def create_gradient_attributions(sentences, target_indices, target_dir=CERTAIN_D
     attrs = []
     for sentence, target_idx in zip(sentences, target_indices):
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
-        attr = gradient_attributions(input_embeds, attention_mask, target_idx, model)
+        attr = gradient_attributions(input_embeds, attention_mask, target_idx, custom_model)
         attr = torch.squeeze(attr)
+        attr = attr.mean(dim=1)         # average over the embedding attributions
         attrs.append(format_attrs(attr, sentence))
 
     with open(str(os.path.join(args['output_dir'], target_dir, method_file_dict['grads'])), 'w+', encoding='utf-8') as f:
@@ -218,8 +270,9 @@ def create_gradient_attributions(sentences, target_indices, target_dir=CERTAIN_D
     attrs = []
     for sentence, target_idx in zip(sentences, target_indices):
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
-        attr = gradient_attributions(input_embeds, attention_mask, target_idx, model, True)
+        attr = gradient_attributions(input_embeds, attention_mask, target_idx, custom_model, True)
         attr = torch.squeeze(attr)
+        attr = attr.mean(dim=1)         # average over the embedding attributions
         attrs.append(format_attrs(attr, sentence))
 
     with open(str(os.path.join(args['output_dir'], target_dir, method_file_dict['grads_x_inputs'])), 'w+', encoding='utf-8') as f:
@@ -254,8 +307,9 @@ def _do_ig(sentences, target_indices, steps, file, target_dir, baseline_type=Non
         else:
             raise RuntimeError(f'Unknown baseline type: {baseline_type}')
 
-        attr = ig_attributions(input_embeds, attention_mask, target_idx, baseline, model, steps)
+        attr = ig_attributions(input_embeds, attention_mask, target_idx, baseline, custom_model, steps)
         attr = torch.squeeze(attr)
+        attr = attr.mean(dim=1)         # average over the embedding attributions
         attrs.append(format_attrs(attr, sentence))
 
     with open(str(os.path.join(args['output_dir'], target_dir, method_file_dict[file])), 'w+', encoding='utf-8') as f:
@@ -300,22 +354,25 @@ def _do_sg(sentences, target_indices, samples, file, target_dir, noise_level=Non
     attrs_x_inputs = []
     for sentence, target_idx in zip(sentences, target_indices):
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
-        attr = sg_attributions(input_embeds, attention_mask, target_idx, model, samples, noise_level)
+        attr = sg_attributions(input_embeds, attention_mask, target_idx, custom_model, samples, noise_level)
 
         if single_pass:
             attr_x_input = attr.to(device) * input_embeds
             attr_x_input = torch.squeeze(attr_x_input)
+            attr_x_input = attr_x_input.mean(dim=1)
             attrs_x_inputs.append(format_attrs(attr_x_input, sentence))
 
         attr = torch.squeeze(attr)
+        attr = attr.mean(dim=1)         # average over the embedding attributions
         attrs.append(format_attrs(attr, sentence))
 
     if not single_pass:
         for sentence, target_idx in zip(sentences, target_indices):
             input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
-            attr = sg_attributions(input_embeds, attention_mask, target_idx, model, samples, noise_level_x_i)
+            attr = sg_attributions(input_embeds, attention_mask, target_idx, custom_model, samples, noise_level_x_i)
             attr_x_input = attr.to(device) * input_embeds
             attr_x_input = torch.squeeze(attr_x_input)
+            attr_x_input = attr_x_input.mean(dim=1)  # average over the embedding attributions
             attrs_x_inputs.append(format_attrs(attr_x_input, sentence))
 
     with open(str(os.path.join(args['output_dir'], target_dir, method_file_dict[file])), 'w+', encoding='utf-8') as f:
@@ -360,7 +417,7 @@ def create_relprop_attributions(sentences, target_indices, target_dir=CERTAIN_DI
         input_ids, attention_mask = prepare_input_ids_and_attention_mask(sentence)
         inputs_embeds, _ = prepare_embeds_and_att_mask(sentence)
         res = relprop_explainer.generate_LRP(input_ids=input_ids, attention_mask=attention_mask, start_layer=0, index=target_idx)
-        attrs.append(format_attrs(res, sentence))
+        attrs.append(format_attrs(res, sentence))   # no averaging as the attributions are w.r.t. input ids
 
     with open(str(os.path.join(args['output_dir'], target_dir, method_file_dict['relprop'])), 'w+', encoding='utf-8') as f:
         f.write(json.dumps(attrs))
@@ -369,7 +426,7 @@ def create_relprop_attributions(sentences, target_indices, target_dir=CERTAIN_DI
 #   -----------------------------------------------------------------------------------------------
 
 
-def main():
+def main(custom_model):
     sentences, tokens, phrase_sentiments = get_sentences_tokens_and_phrase_sentiments()
 
     # for correct and sure predictions
@@ -384,10 +441,10 @@ def main():
     unsure_pred_indices = []
     unsure_pred_sentences = []
 
-    for sentence, tokens in zip(sentences, tokens):
+    for sentence, tokens in zip(sentences[:25], tokens[:25]):
         # first classify the sample
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
-        res = model(inputs_embeds=input_embeds, attention_mask=attention_mask, return_logits=False, inputs_embeds_in_input_ids=False)
+        res = custom_model(inputs_embeds=input_embeds, attention_mask=attention_mask, return_logits=False, inputs_embeds_in_input_ids=False)
         top_idx = int(torch.argmax(res, dim=-1))
         # compare it to the true sentiment - on mismatch ignore, on correct prediction save
         true_sentiment = phrase_sentiments[sentence]
@@ -420,6 +477,12 @@ def main():
         create_smoothgrad_noise_test_attributions(correct_pred_sentences, correct_pred_indices)
     elif args['ig_baseline_test']:
         create_ig_baseline_test_attributions(correct_pred_sentences, correct_pred_indices)
+    elif args['ks_baseline_test']:
+        # we need to switch models for captum
+        custom_model.to('cpu')
+        del custom_model
+        hf_model = transformers.AutoModelForSequenceClassification.from_pretrained(args['model_path']).to(device)
+        create_kernel_shap_baseline_test_attributions(correct_pred_sentences, correct_pred_indices, hf_model)
     else:
         # create attributions for the correctly predicted and certain
         create_gradient_attributions(correct_pred_sentences, correct_pred_indices)
@@ -432,6 +495,13 @@ def main():
         create_smoothgrad_attributions(unsure_pred_sentences, unsure_pred_indices, UNSURE_DIR)
         create_ig_attributions(unsure_pred_sentences, unsure_pred_indices, UNSURE_DIR)
         create_relprop_attributions(unsure_pred_sentences, unsure_pred_indices, UNSURE_DIR)
+
+        # since we need a different model for captum, we will leave as the last method
+        custom_model.to('cpu')
+        del custom_model
+        hf_model = transformers.AutoModelForSequenceClassification.from_pretrained(args['model_path']).to(device)
+        create_kernel_shap_attributions(correct_pred_sentences, correct_pred_indices, hf_model)
+        create_kernel_shap_attributions(unsure_pred_sentences, unsure_pred_indices, hf_model, UNSURE_DIR)
 
     # print document counts
     print(f'Total documents: {len(sentences)}')
@@ -454,30 +524,39 @@ if __name__ == '__main__':
     parser.add_argument('--sg_noise', required=False, type=float, default=0.15)
     parser.add_argument('--ig_baseline', required=False, default='zero', type=str)
     parser.add_argument('--use_prepared_hp', required=False, default=False, type=parse_bool)
-    parser.add_argument('--dataset_dir', required=False, type=str, default='datasets_ours/sst wip', help='The default'
+    parser.add_argument('--dataset_dir', required=False, type=str, default='datasets_ours/sst', help='The default'
                                                                                                      'corresponds to'
                                                                                                      'the project'
                                                                                                      'root')
-    parser.add_argument('--smoothgrad_noise_test', required=False, default=False)
-    parser.add_argument('--ig_baseline_test', required=False, default=False)
+    parser.add_argument('--smoothgrad_noise_test', required=False, default=False, type=parse_bool)
+    parser.add_argument('--ig_baseline_test', required=False, default=False, type=parse_bool)
+    parser.add_argument('--ks_baseline_test', required=False, default=False, type=parse_bool)
     args = vars(parser.parse_args())
 
     # prepare models
     tokenizer = AutoTokenizer.from_pretrained(args['model_path'], local_files_only=True)
-    model = BertSequenceClassifierSST.from_pretrained(args['model_path'], local_files_only=True)
-    model = model.to(device)
-    model.eval()
-    embeddings = model.bert.base_model.embeddings.word_embeddings.weight.data
+    custom_model = BertSequenceClassifierSST.from_pretrained(args['model_path'], local_files_only=True)
+    custom_model = custom_model.to(device)
+    custom_model.eval()
+    embeddings = custom_model.bert.base_model.embeddings.word_embeddings.weight.data
 
+    # we expect the models to use these tokens
     pad_token_index = tokenizer.pad_token_id
+    cls_token_index = tokenizer.cls_token_id
+    sep_token_index = tokenizer.sep_token_id
 
-    relprop_explainer = Generator(model)
+    unk_token_index = tokenizer.unk_token_id
+    mask_token_index = tokenizer.mask_token_id
+
+    relprop_explainer = Generator(custom_model)
 
     # finish setup and start generating
     create_dirs()
     if args['smoothgrad_noise_test']:
         prepare_noise_test()
     elif args['ig_baseline_test']:
-        prepare_baseline_test()
+        prepare_ig_baseline_test()
+    elif args['ks_baseline_test']:
+        prepare_ks_baseline_test()
 
-    main()
+    main(custom_model)
