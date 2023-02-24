@@ -1,7 +1,38 @@
 import torch
+from captum.attr import KernelShap
 
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+torch.manual_seed(42)
+
+
+def kernel_shap_attributions(input_ids, attention_mask, target_idx, model, baseline_idx, cls_tensor, sep_tensor,
+                             logit_fn, steps=50):
+    # As an exception, we expect the input_ids not to contain CLS and SEP tokens - we have no control of the
+    # pertubations done and we need the CLS token to stay there as it's a special case.
+    # As such, we pass only the token embeddings to captum and in the proxy function
+    # we add the CLS and SEP tokens to the input.
+
+    def f(inputs, att_m):
+        # we use this function as a proxy to the model due to how the captum api works
+        # captum will squeeze the attention mask, so we give it one more dimension
+        t1 = torch.cat((cls_tensor, inputs), dim=1)
+        t2 = torch.cat((t1, sep_tensor), dim=1)
+        output = model(input_ids=t2, attention_mask=torch.unsqueeze(att_m, dim=0)).logits
+
+        # apply softmax or sigmoid on the logits - the models we use are modified for Chefer et al. and are not
+        # compatible with captum. We have to use ModelForSequenceClassification which provides logits
+        return logit_fn(output)
+
+    ks = KernelShap(f)
+    res = ks.attribute(inputs=input_ids, additional_forward_args=attention_mask, target=target_idx,
+                       n_samples=steps, baselines=baseline_idx)
+
+    # add dummy values for the removed CLS and SEP tokens to preserve the interface
+    res = torch.cat((torch.tensor([[0.0]]).to(device), res), dim=1)
+    res = torch.cat((res, torch.tensor([[0.0]]).to(device)), dim=1)
+
+    return res
 
 
 def gradient_attributions(input_embeds, attention_mask, target_idx, model, x_inputs=False):
