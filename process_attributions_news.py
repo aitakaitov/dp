@@ -112,6 +112,7 @@ def get_class_word_dict():
             class_word_dict_temp[idx].append(word)
             class_word_dict[idx].append((word, pmi))
 
+    # ignore too short documents
     invalid_class_indices = []
     for clss, words in class_word_dict.items():
         if len(words) < args['min_word_count']:
@@ -308,7 +309,11 @@ def main():
     output_csv_file.flush()
     # process attributions for each method
     for method, file in method_file_dict.items():
-        attrs = load_json(os.path.join(args['attrs_dir'], args['pred_type'], file))
+        try:
+            attrs = load_json(os.path.join(args['attrs_dir'], args['pred_type'], file))
+        except OSError:
+            print(f'JSON file for method {method} not found, skipping')
+            continue
 
         evals = process_method(attrs, bert_tokens, classes_significant_words_dict, target_indices, invalid_class_indices)
         output_csv_file.write(f'{method};' +
@@ -326,7 +331,7 @@ if __name__ == '__main__':
     parser.add_argument('--pred_type', required=False, default='certain', help='One of [certain, unsure]')
 
     parser.add_argument('--min_word_count', required=False, default=30)     # 2x15 -- top15 metric would return 1.0 for 15 word documents, doubling the length as a minimum in an expert decision
-    parser.add_argument('--min_pmi', required=False, default=5.0)
+    parser.add_argument('--min_pmi', required=False, default=4.0)       # 4.0 was determined to be appropriate
 
     args = vars(parser.parse_args())
     main()
