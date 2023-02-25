@@ -60,6 +60,13 @@ ig_baseline_configs = {
     'bert-mini': 'pad'
 }
 
+ks_baseline_configs = {
+    'bert-base-cased': 'pad',
+    'bert-medium': 'mask',
+    'bert-small': 'unk',
+    'bert-mini': 'pad'
+}
+
 
 def get_sg_noise(model_path):
     for k in sg_noise_configs.keys():
@@ -81,6 +88,14 @@ def get_ig_baseline(model_path):
     for k in ig_baseline_configs.keys():
         if k in model_path:
             return ig_baseline_configs[k]
+
+    raise RuntimeError(f'Model {model_path} is not supported with --use_predefined_hp set to True')
+
+
+def get_ks_baseline(model_path):
+    for k in ks_baseline_configs.keys():
+        if k in model_path:
+            return ks_baseline_configs[k]
 
     raise RuntimeError(f'Model {model_path} is not supported with --use_predefined_hp set to True')
 
@@ -235,11 +250,19 @@ def _do_kernel_shap(sentences, target_indices, model, n_steps, baseline_idx, fil
 
 
 def create_kernel_shap_attributions(sentences, target_indices, model, target_dir=CERTAIN_DIR):
-    # TODO use predefined config for baselines based on model names
+    baseline_type = args['ks_baseline'] if not args['use_prepared_hp'] else get_ks_baseline(args['model_path'])
+    if baseline_type == 'pad':
+        baseline = pad_token_index
+    elif baseline_type == 'unk':
+        baseline = unk_token_index
+    elif baseline_type == 'mask':
+        baseline = mask_token_index
+    else:
+        raise RuntimeError(f'Unknown KS baseline {baseline_type}')
 
-    _do_kernel_shap(sentences, target_indices, model, 100, 0, 'ks_100', target_dir)
-    _do_kernel_shap(sentences, target_indices, model, 200, 0, 'ks_200', target_dir)
-    _do_kernel_shap(sentences, target_indices, model, 500, 0, 'ks_500', target_dir)
+    _do_kernel_shap(sentences, target_indices, model, 100, baseline, 'ks_100', target_dir)
+    _do_kernel_shap(sentences, target_indices, model, 200, baseline, 'ks_200', target_dir)
+    _do_kernel_shap(sentences, target_indices, model, 500, baseline, 'ks_500', target_dir)
 
 
 def create_kernel_shap_baseline_test_attributions(sentences, target_indices, model, target_dir=CERTAIN_DIR):
@@ -523,6 +546,7 @@ if __name__ == '__main__':
     parser.add_argument('--baselines_dir', required=True, help='Directory with baseline examples')
     parser.add_argument('--sg_noise', required=False, type=float, default=0.15)
     parser.add_argument('--ig_baseline', required=False, default='zero', type=str)
+    parser.add_argument('--ks_baseline', required=False, default='pad', type=str)
     parser.add_argument('--use_prepared_hp', required=False, default=False, type=parse_bool)
     parser.add_argument('--dataset_dir', required=False, type=str, default='datasets_ours/sst', help='The default'
                                                                                                      'corresponds to'

@@ -48,7 +48,7 @@ sg_noise_configs = {
 
 sg_x_i_noise_configs = {
     'Czert': 0.05,
-    'MiniLM': 0.15,
+    'MiniLM': 0.25,
     'small-e-czech': 0.15
 }
 
@@ -56,6 +56,12 @@ sg_x_i_noise_configs = {
 ig_baseline_configs = {
     'Czert': 'zero',
     'MiniLM': 'pad',
+    'small-e-czech': 'pad'
+}
+
+ks_baseline_configs = {
+    'Czert': 'mask',
+    'MiniLM': 'mask',
     'small-e-czech': 'pad'
 }
 
@@ -80,6 +86,14 @@ def get_ig_baseline(model_path):
     for k in ig_baseline_configs.keys():
         if k in model_path:
             return ig_baseline_configs[k]
+
+    raise RuntimeError(f'Model {model_path} is not supported with --use_predefined_hp set to True')
+
+
+def get_ks_baseline(model_path):
+    for k in ks_baseline_configs.keys():
+        if k in model_path:
+            return ks_baseline_configs[k]
 
     raise RuntimeError(f'Model {model_path} is not supported with --use_predefined_hp set to True')
 
@@ -343,11 +357,19 @@ def _do_kernel_shap(sentences, target_indices_list, model, n_steps, baseline_idx
 
 
 def create_kernel_shap_attributions(sentences, target_indices, model, target_dir=CERTAIN_DIR):
-    # TODO use predefined config for baselines based on model names
+    baseline_type = args['ks_baseline'] if not args['use_prepared_hp'] else get_ks_baseline(args['model_path'])
+    if baseline_type == 'pad':
+        baseline = pad_token_index
+    elif baseline_type == 'unk':
+        baseline = unk_token_index
+    elif baseline_type == 'mask':
+        baseline = mask_token_index
+    else:
+        raise RuntimeError(f'Unknown KS baseline {baseline_type}')
 
-    _do_kernel_shap(sentences, target_indices, model, 100, 0, 'ks_100', target_dir)
-    _do_kernel_shap(sentences, target_indices, model, 200, 0, 'ks_200', target_dir)
-    _do_kernel_shap(sentences, target_indices, model, 500, 0, 'ks_500', target_dir)
+    _do_kernel_shap(sentences, target_indices, model, 100, baseline, 'ks_100', target_dir)
+    _do_kernel_shap(sentences, target_indices, model, 200, baseline, 'ks_200', target_dir)
+    _do_kernel_shap(sentences, target_indices, model, 500, baseline, 'ks_500', target_dir)
 
 
 def create_kernel_shap_baseline_test_attributions(sentences, target_indices, model, target_dir=CERTAIN_DIR):
@@ -390,7 +412,7 @@ def main(custom_model):
     # list for counting the actually valid labels
     labels_short_enough = []
 
-    for document, label in zip(documents[:50], labels[:50]):
+    for document, label in zip(documents[:20], labels[:20]):
         # check the length - no longer than 512 tokens
         if len(tokenizer.tokenize(document)) + 2 > 512:
             continue
@@ -437,9 +459,6 @@ def main(custom_model):
 
     do_relprop = any(['Bert' in arch for arch in custom_model.config.architectures])
 
-    with open(os.path.join(args['output_dir'], 'method_file_dict.json'), 'w+', encoding='utf-8') as f:
-        f.write(json.dumps(method_file_dict))
-
     if args['smoothgrad_noise_test']:
         create_smoothgrad_noise_test_attributions(valid_documents_certain, target_indices_certain)
     elif args['ig_baseline_test']:
@@ -450,25 +469,29 @@ def main(custom_model):
         hf_model = transformers.AutoModelForSequenceClassification.from_pretrained(args['model_path']).to(device)
         create_kernel_shap_baseline_test_attributions(valid_documents_certain, target_indices_certain, hf_model)
     else:
-        create_gradient_attributions(valid_documents_certain, target_indices_certain)
-        create_smoothgrad_attributions(valid_documents_certain, target_indices_certain)
-        create_ig_attributions(valid_documents_certain, target_indices_certain)
+        #create_gradient_attributions(valid_documents_certain, target_indices_certain)
+        #create_smoothgrad_attributions(valid_documents_certain, target_indices_certain)
+        #create_ig_attributions(valid_documents_certain, target_indices_certain)
 
-        create_gradient_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
-        create_smoothgrad_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
-        create_ig_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+        #create_gradient_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+        #create_smoothgrad_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+        #create_ig_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
 
-        if do_relprop:
-            create_relprop_attributions(valid_documents_certain, target_indices_certain)
-            create_relprop_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
-        else:
-            method_file_dict.pop('relprop')
+        #if do_relprop:
+        #    create_relprop_attributions(valid_documents_certain, target_indices_certain)
+        #    create_relprop_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
 
         custom_model.to('cpu')
         del custom_model
         hf_model = transformers.AutoModelForSequenceClassification.from_pretrained(args['model_path']).to(device)
         create_kernel_shap_attributions(valid_documents_certain, target_indices_certain, hf_model)
         create_kernel_shap_attributions(valid_documents_unsure, target_indices_unsure, hf_model, UNSURE_DIR)
+
+    if not do_relprop and 'relprop' in method_file_dict.keys():
+        method_file_dict.pop('relprop')
+
+    with open(os.path.join(args['output_dir'], 'method_file_dict.json'), 'w+', encoding='utf-8') as f:
+        f.write(json.dumps(method_file_dict))
 
     # print report
     print(f'Total labels: {count_rec(labels_short_enough)}')
@@ -487,7 +510,8 @@ if __name__ == '__main__':
     parser.add_argument('--model_path', required=True, help='Trained model')
     parser.add_argument('--sg_noise', required=False, type=float, default=0.15)
     parser.add_argument('--ig_baseline', required=False, default='zero', type=str)
-    parser.add_argument('--use_prepared_hp', required=False, default=False, type=parse_bool)
+    parser.add_argument('--ks_baseline', required=False, default='pad', type=str)
+    parser.add_argument('--use_prepared_hp', required=False, default=True, type=parse_bool)
     parser.add_argument('--smoothgrad_noise_test', required=False, default=False, type=parse_bool)
     parser.add_argument('--ig_baseline_test', required=False, default=False, type=parse_bool)
     parser.add_argument('--ks_baseline_test', required=False, default=False, type=parse_bool)
@@ -514,7 +538,7 @@ if __name__ == '__main__':
         custom_model = BertSequenceClassifierNews.from_pretrained(args['model_path'])
         embeddings = custom_model.bert.base_model.embeddings.word_embeddings.weight.data
     elif any(['Roberta' in arch for arch in config.architectures]):
-        tokenizer = AutoTokenizer.from_pretrained(args['model_path'])
+        tokenizer = AutoTokenizer.from_pretrained('xlm-roberta-large')#args['model_path'])
         custom_model = RobertaSequenceClassifierNews.from_pretrained(args['model_path'])
         embeddings = custom_model.roberta.base_model.embeddings.word_embeddings.weight.data
     else:
