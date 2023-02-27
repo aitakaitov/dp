@@ -13,8 +13,7 @@ def main(args: dict):
 
     class_count = len(class_dict.keys())
 
-    # load tokenizer and model
-    tokenizer = transformers.AutoTokenizer.from_pretrained(args['tokenizer'])
+    # load model
     config = transformers.AutoConfig.from_pretrained(args['model_folder'])
     if any('Bert' in arch for arch in config.architectures):
         model = transformers.BertForSequenceClassification.from_pretrained(args['model_folder'], num_labels=class_count,
@@ -36,14 +35,12 @@ def main(args: dict):
 
     model.eval()
 
-    # extract padding token
+    # extract the embedding dimensions
     embedding_dimensions = embeddings.shape[1]
-
-    padding_embedding = tokenizer.convert_tokens_to_ids('[PAD]')
-    padding_embedding = torch.index_select(embeddings, 0, torch.tensor(padding_embedding).to(device))
 
     os.makedirs(args['output_dir'], exist_ok=True)
 
+    # we want the target label to be all zeros
     target_label = torch.zeros(1, class_count).to(device)
     loss_fn = torch.nn.BCEWithLogitsLoss().to(device)
     sigmoid = torch.nn.Sigmoid().to(device)
@@ -54,7 +51,7 @@ def main(args: dict):
         arr.extend([0 for _ in range(512 - length)])
         attention_mask = torch.tensor([arr]).to(device)
 
-        # generate random embeddings and add padding embeddings
+        # generate random embeddings
         baseline = torch.randn((1, length, embedding_dimensions), dtype=torch.float32).to(device)
 
         optimizer = torch.optim.Adam([baseline], lr=args['lr'])
@@ -75,13 +72,15 @@ def main(args: dict):
 
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
-    argparser.add_argument('--tokenizer', type=str, required=True)
-    argparser.add_argument('--model_folder', type=str, required=True)
+    argparser.add_argument('--model_folder', type=str, required=True, help='BertForSequenceClassification, '
+                                                                           'ElectraForSequenceClassification or '
+                                                                           'XLMRobertaForSequenceClassification')
     argparser.add_argument('--output_dir', type=str, required=True)
-    argparser.add_argument('--start', type=int, default=1, required=False)
-    argparser.add_argument('--lr', type=float, default=1e-1, required=False)
-    argparser.add_argument('--max', type=float, default=1e-2, required=False)
-
+    argparser.add_argument('--start', type=int, default=1, required=False, help='Starting length')
+    argparser.add_argument('--lr', type=float, default=1e-1, required=False, help='Lerning rate')
+    argparser.add_argument('--max', type=float, default=1e-2, required=False, help='Output of the network after '
+                                                                                   'sigmoid has to have all elements '
+                                                                                   'smaller than this')
     args = vars(argparser.parse_args())
     main(args)
 

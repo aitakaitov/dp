@@ -10,7 +10,7 @@ np.random.seed(42)
 CERTAIN_DIR = 'certain'
 UNSURE_DIR = 'unsure'
 
-MINIMAL_TOKEN_COUNT = 12
+MINIMAL_TOKEN_COUNT = 10
 
 accent_dict = {
     'á': 'a',
@@ -287,14 +287,6 @@ def evaluate_attr(bert_attrs: list, sst_sentiments: list, label: int):
     return res
 
 
-def mean_confidence_interval(data, confidence=0.95):
-    a = 1.0 * np.array(data)
-    n = len(a)
-    m, se = np.mean(a), scipy.stats.sem(a)
-    h = se * scipy.stats.t.ppf((1 + confidence) / 2., n - 1)
-    return m, m - h, m + h
-
-
 def process_method(bert_attrs: list, sst_attrs: list, short_samples_indices: list, sst_bert_tokens: dict, labels: list):
     # perform preprocessing (average embedding attributions except for relprop)
     # we need to preprocess the sentiment too - we scale it to <0, 1>, so that the highest sentiment will have the
@@ -328,6 +320,8 @@ def process_method(bert_attrs: list, sst_attrs: list, short_samples_indices: lis
 def main():
     output_csv_file = open(args['output_file'], 'w+', encoding='utf-8')
 
+    # get the methods evaluated, generate a random reference,
+    # load the SST data and BERT tokens, eliminate too short documents
     method_file_dict = get_method_file_dict()
     generate_random_attrs(method_file_dict)
     phrase_sentiments = get_phrase_sentiments()
@@ -361,6 +355,7 @@ if __name__ == '__main__':
     parser.add_argument('--uncased', required=False, default=False, help='Set to True for uncased models')
     args = vars(parser.parse_args())
 
+    # these models were evaluated by us and are uncased
     uncased_models = ['bert-mini', 'bert-small', 'bert-medium']
     args['lowercase_sst'] = any(m in args['attrs_dir'] for m in uncased_models) or args['uncased']
 

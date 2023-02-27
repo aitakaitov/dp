@@ -204,10 +204,10 @@ def merge_embedding_attrs(attributions: list):
             if len(np.array(attributions[i][j]).shape) == 1:
                 return attributions
 
-            # go trough all token embeddings
+            # go trough all token embeddings and average them
             for k in range(len(attributions[i][j])):
                 attr = np.array(attributions[i][j][k])
-                attr = np.sum(attr, axis=0)
+                attr = np.mean(attr, axis=0)
                 attributions[i][j][k] = attr.tolist()
 
     return attributions
@@ -228,6 +228,7 @@ def get_word_attrs_dict(attrs, tokens):
 
 
 def get_keywords(tokens, words_pmi):
+    # get the keywords present in the document
     tokens = [t.lower() for t in tokens]
     words = [w for w, pmi in words_pmi]
     keywords = [w for w in words if w in tokens]
@@ -235,6 +236,7 @@ def get_keywords(tokens, words_pmi):
 
 
 def get_top_k_attrs(word_attr_dict: dict, k: int):
+    # extract top K attributions
     sorted_words = [word for word, attr in sorted(word_attr_dict.items(), key=lambda item: item[1], reverse=True)]
     if len(sorted_words) <= k:
         return sorted_words, sorted_words
@@ -243,9 +245,11 @@ def get_top_k_attrs(word_attr_dict: dict, k: int):
 
 
 def eval_top_k(attrs, tokens, words_pmi, k):
+    # Evaluate the attributions with a given K
     word_attr_dict = get_word_attrs_dict(attrs, tokens)
     keywords = get_keywords(tokens, words_pmi)
 
+    # if no keywords are
     if len(keywords) == 0:
         return None
 
@@ -330,8 +334,14 @@ if __name__ == '__main__':
                         help='If True, negative attributions are zeroed, else Pos/Neg attributions')
     parser.add_argument('--pred_type', required=False, default='certain', help='One of [certain, unsure]')
 
-    parser.add_argument('--min_word_count', required=False, default=30)     # 2x15 -- top15 metric would return 1.0 for 15 word documents, doubling the length as a minimum in an expert decision
-    parser.add_argument('--min_pmi', required=False, default=4.0)       # 4.0 was determined to be appropriate
+    # 2x15 -- top15 metric would return 1.0 for 15 word documents,
+    # doubling the length as a minimum is an expert decision
+    parser.add_argument('--min_word_count', required=False, default=30,
+                        help='Documents with less tokens will be ignored')
+    # 4.0 was determined to be appropriate
+    parser.add_argument('--min_pmi', required=False, default=4.0, help='The PMI is not log()\'d. '
+                                                                       'Refer to the PMI.csv file. '
+                                                                       'Keywords with lower PMI are ignored.')
 
     args = vars(parser.parse_args())
     main()

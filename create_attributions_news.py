@@ -162,6 +162,11 @@ def format_attrs(attrs, sentence):
 
 
 def prepare_embeds_and_att_mask(sentence):
+    """
+    Prepares input embeddings and attention mask
+    :param sentence:
+    :return:
+    """
     encoded = tokenizer(sentence, max_length=512, truncation=True, return_tensors='pt')
     attention_mask = encoded.data['attention_mask'].to(device)
     input_embeds = torch.unsqueeze(torch.index_select(embeddings, 0, torch.squeeze(encoded.data['input_ids']).to(device)), 0).requires_grad_(True).to(device)
@@ -188,16 +193,16 @@ def prepare_input_ids_and_attention_mask(sentence, add_special_tokens=True):
     return input_ids, attention_mask
 
 
-def create_neutral_baseline(sentence, pad_token):
-    length = len(tokenizer.tokenize(sentence))
-    baseline_text = " ".join([pad_token for _ in range(length)])
-    inputs_embeds, attention_mask = prepare_embeds_and_att_mask(baseline_text)
-    return inputs_embeds
-
-
 #   -----------------------------------------------------------------------------------------------
 
 def create_gradient_attributions(sentences, target_indices_list, target_dir=CERTAIN_DIR):
+    """
+    Creates vanilla gradient attributions
+    :param sentences:
+    :param target_indices_list:
+    :param target_dir:
+    :return:
+    """
     attrs = []
     for sentence, target_indices in zip(sentences, target_indices_list):
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
@@ -236,9 +241,7 @@ def _do_ig(sentences, target_indices_list, steps, file, target_dir, baseline_typ
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
         attrs_temp = []
         for target_idx in target_indices:
-            if baseline_type is None:
-                baseline = create_neutral_baseline(sentence, tokenizer.pad_token)
-            elif baseline_type == 'avg':
+            if baseline_type == 'avg':
                 baseline = utils.baselines.embedding_space_average_baseline(input_embeds, average_emb)
             elif baseline_type == 'zero':
                 baseline = utils.baselines.zero_embedding_baseline(input_embeds)
@@ -260,6 +263,13 @@ def _do_ig(sentences, target_indices_list, steps, file, target_dir, baseline_typ
 
 
 def create_ig_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
+    """
+    Generates Integrated Gradients attributions
+    :param sentences:
+    :param target_indices:
+    :param target_dir:
+    :return:
+    """
     baseline_type = args['ig_baseline'] if not args['use_prepared_hp'] else get_ig_baseline(args['model_path'])
 
     _do_ig(sentences, target_indices, 20, 'ig_20', target_dir, baseline_type)
@@ -322,6 +332,13 @@ def _do_sg(sentences, target_indices_list, samples, file, target_dir, noise_leve
 
 
 def create_smoothgrad_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
+    """
+    Generates SmoothGRAD attributions
+    :param sentences:
+    :param target_indices:
+    :param target_dir:
+    :return:
+    """
     sg_noise = args['sg_noise'] if not args['use_prepared_hp'] else get_sg_noise(args['model_path'])
     sg_x_i_noise = args['sg_noise'] if not args['use_prepared_hp'] else get_sg_x_i_noise(args['model_path'])
 
@@ -357,6 +374,14 @@ def _do_kernel_shap(sentences, target_indices_list, model, n_steps, baseline_idx
 
 
 def create_kernel_shap_attributions(sentences, target_indices, model, target_dir=CERTAIN_DIR):
+    """
+    Generates KernelShap attributions
+    :param sentences:
+    :param target_indices:
+    :param model:
+    :param target_dir:
+    :return:
+    """
     baseline_type = args['ks_baseline'] if not args['use_prepared_hp'] else get_ks_baseline(args['model_path'])
     if baseline_type == 'pad':
         baseline = pad_token_index
@@ -379,6 +404,13 @@ def create_kernel_shap_baseline_test_attributions(sentences, target_indices, mod
 
 
 def create_relprop_attributions(sentences, target_indices_list, target_dir=CERTAIN_DIR):
+    """
+    Generates Chefer et al attributions
+    :param sentences:
+    :param target_indices_list:
+    :param target_dir:
+    :return:
+    """
     attrs = []
     for sentence, target_indices in zip(sentences, target_indices_list):
         input_ids, attention_mask = prepare_input_ids_and_attention_mask(sentence)
@@ -464,23 +496,25 @@ def main(custom_model):
     elif args['ig_baseline_test']:
         create_ig_baseline_test_attributions(valid_documents_certain, target_indices_certain)
     elif args['ks_baseline_test']:
+        # Use the HF model for captum
         custom_model.to('cpu')
         del custom_model
         hf_model = transformers.AutoModelForSequenceClassification.from_pretrained(args['model_path']).to(device)
         create_kernel_shap_baseline_test_attributions(valid_documents_certain, target_indices_certain, hf_model)
     else:
-        #create_gradient_attributions(valid_documents_certain, target_indices_certain)
-        #create_smoothgrad_attributions(valid_documents_certain, target_indices_certain)
-        #create_ig_attributions(valid_documents_certain, target_indices_certain)
+        create_gradient_attributions(valid_documents_certain, target_indices_certain)
+        create_smoothgrad_attributions(valid_documents_certain, target_indices_certain)
+        create_ig_attributions(valid_documents_certain, target_indices_certain)
 
-        #create_gradient_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
-        #create_smoothgrad_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
-        #create_ig_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+        create_gradient_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+        create_smoothgrad_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+        create_ig_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
 
-        #if do_relprop:
-        #    create_relprop_attributions(valid_documents_certain, target_indices_certain)
-        #    create_relprop_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+        if do_relprop:
+            create_relprop_attributions(valid_documents_certain, target_indices_certain)
+            create_relprop_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
 
+        # use the HF model for captum
         custom_model.to('cpu')
         del custom_model
         hf_model = transformers.AutoModelForSequenceClassification.from_pretrained(args['model_path']).to(device)
@@ -493,12 +527,6 @@ def main(custom_model):
     with open(os.path.join(args['output_dir'], 'method_file_dict.json'), 'w+', encoding='utf-8') as f:
         f.write(json.dumps(method_file_dict))
 
-    # print report
-    print(f'Total labels: {count_rec(labels_short_enough)}')
-    print(f'Correctly predicted labels: {count_rec(target_indices_certain) + count_rec(target_indices_unsure)}')
-    print(f'Labels predicted certainly: {count_rec(target_indices_certain)}')
-    print(f'Labels predicted unsurely: {count_rec(target_indices_unsure)}')
-
 
 def parse_bool(s):
     return s.lower() == 'true'
@@ -507,16 +535,16 @@ def parse_bool(s):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--output_dir', default='output_news_attrs', help='Attributions output directory')
-    parser.add_argument('--model_path', required=True, help='Trained model')
-    parser.add_argument('--sg_noise', required=False, type=float, default=0.15)
-    parser.add_argument('--ig_baseline', required=False, default='zero', type=str)
-    parser.add_argument('--ks_baseline', required=False, default='pad', type=str)
-    parser.add_argument('--use_prepared_hp', required=False, default=True, type=parse_bool)
-    parser.add_argument('--smoothgrad_noise_test', required=False, default=False, type=parse_bool)
-    parser.add_argument('--ig_baseline_test', required=False, default=False, type=parse_bool)
-    parser.add_argument('--ks_baseline_test', required=False, default=False, type=parse_bool)
-    parser.add_argument('--baselines_dir', required=False, default='')
-    parser.add_argument('--dataset_dir', required=False, default='datasets_ours/news')
+    parser.add_argument('--model_path', required=True, help='Trained model - loaded with from_pretrained')
+    parser.add_argument('--sg_noise', required=False, type=float, default=0.15, help='The noise level applied to smoothgrad')
+    parser.add_argument('--ig_baseline', required=False, default='zero', type=str, help='Integrated Gradients baseline - one of [zero, avg, pad, custom]')
+    parser.add_argument('--ks_baseline', required=False, default='pad', type=str, help='KernelShap baseline token - one of [pad, unk, mask]')
+    parser.add_argument('--use_prepared_hp', required=False, default=True, type=parse_bool, help='Use predetermined hyperparameters')
+    parser.add_argument('--smoothgrad_noise_test', required=False, default=False, type=parse_bool, help='Perform smoothgrad noise level test')
+    parser.add_argument('--ig_baseline_test', required=False, default=False, type=parse_bool, help='Perform Integrated Gradients baseline test')
+    parser.add_argument('--ks_baseline_test', required=False, default=False, type=parse_bool, help='Perform KernelShap baseline test')
+    parser.add_argument('--baselines_dir', required=True, help='Directory with baseline examples')
+    parser.add_argument('--dataset_dir', required=False, default='datasets_ours/news', help='The default corresponds to the project root')
 
     args = vars(parser.parse_args())
 

@@ -8,6 +8,19 @@ torch.manual_seed(42)
 
 def kernel_shap_attributions(input_ids, attention_mask, target_idx, model, baseline_idx, cls_tensor, sep_tensor,
                              logit_fn, steps=50):
+    """
+    Generates KernelShap attributions using the Captum implementation
+    :param input_ids: input ids - without CLS and SEP tokens
+    :param attention_mask: attention mask
+    :param target_idx: target index in the model output
+    :param model: model
+    :param baseline_idx: token to use as a baseline
+    :param cls_tensor: a shape (1, 1) tensor with CLS token index
+    :param sep_tensor: a shape (1, 1) tensor with SEP token index
+    :param logit_fn: function to apply to the logits (e.g. softmax or sigmoid) - needs to be callable
+    :param steps: number of pertubed samples to use
+    :return:
+    """
     # As an exception, we expect the input_ids not to contain CLS and SEP tokens - we have no control of the
     # pertubations done and we need the CLS token to stay there as it's a special case.
     # As such, we pass only the token embeddings to captum and in the proxy function
@@ -36,6 +49,15 @@ def kernel_shap_attributions(input_ids, attention_mask, target_idx, model, basel
 
 
 def gradient_attributions(input_embeds, attention_mask, target_idx, model, x_inputs=False):
+    """
+    Vanilla Gradients
+    :param input_embeds: input embeddings
+    :param attention_mask: attention mask
+    :param target_idx: target index in the model output
+    :param model: model
+    :param x_inputs: multiply by inputs
+    :return:
+    """
     input_embeds = input_embeds.requires_grad_(True).to(device)
     attention_mask = attention_mask.to(device)
 
@@ -50,7 +72,16 @@ def gradient_attributions(input_embeds, attention_mask, target_idx, model, x_inp
 
 
 def ig_attributions(inputs_embeds, attention_mask, target_idx, baseline, model, steps=50):
-    # scale inputs and compute gradients
+    """
+    Generates Integrated Gradients attributions for a sample
+    :param inputs_embeds: input embeddings
+    :param attention_mask: attention mask
+    :param target_idx: taget index in the model output
+    :param baseline: what baseline to use as a starting point for the interpolation
+    :param model: model
+    :param steps: number of interpolation steps
+    :return:
+    """
     interpolated_samples = __ig_interpolate_samples(baseline, inputs_embeds, steps)
     gradients = torch.tensor([])
     for sample in interpolated_samples:
@@ -69,6 +100,16 @@ def __ig_interpolate_samples(baseline, target, steps):
 
 
 def sg_attributions(inputs_embeds, attention_mask, target_idx, model, samples=50, stdev_spread=0.15):
+    """
+    Generates SmoothGRAD attributions for a sample
+    :param inputs_embeds: Input embeddings
+    :param attention_mask: attention mask
+    :param target_idx: the target index in the model output
+    :param model: model
+    :param samples: number of noisy samples
+    :param stdev_spread: the noise level
+    :return:
+    """
     stdev = (torch.max(inputs_embeds) - torch.min(inputs_embeds)) * stdev_spread
     length = attention_mask.shape[1]
     samples = __sg_generate_samples(inputs_embeds, length, stdev, samples)
@@ -83,6 +124,7 @@ def sg_attributions(inputs_embeds, attention_mask, target_idx, model, samples=50
 
 
 def __sg_generate_samples(inputs_embeds, length, stdev, samples):
+    # Generate noisy samples
     noisy_samples = []
     for i in range(samples):
         means = torch.zeros((1, length, inputs_embeds.shape[2])).to('cpu')
