@@ -1,17 +1,17 @@
-import os
-
 import torch
 import transformers
 import torchmetrics
-from torch.utils.tensorboard import SummaryWriter
-import tqdm
 from datasets_ours.news.news_dataset import NewsDataset
 import json
 from sklearn.model_selection import KFold
+from torch.utils.data import TensorDataset, DataLoader
 import random
 import argparse
 
+import wandb
+
 import tensorflow as tf
+    
 physical_devices = tf.config.list_physical_devices('GPU')
 
 # Disable all GPUS - tensorflow tends to reserve all the GPU memory
@@ -34,7 +34,8 @@ def get_file_text(path):
 
 
 def train():
-    of = open(args['model_name'].replace('/', '_').replace('\\', '_') + f'-{random_number}-output', 'w+', encoding='utf-8')
+    of = open(args['model_name'].replace('/', '_').replace('\\', '_') + f'-{random_number}-output', 'w+',
+              encoding='utf-8')
 
     train_set = NewsDataset(get_file_text('datasets_ours/news/train.csv'), tokenizer, classes_dict)
 
@@ -47,16 +48,23 @@ def train():
     labels_all = [[] for _ in range(args['epochs'])]
     predictions_all = [[] for _ in range(args['epochs'])]
 
-    fold = 1
-    for train_ids, test_ids in kfold.split(train_set):
+    for fold, (train_ids, test_ids) in enumerate(kfold.split(train_set.input_ids)):
         print(f'FOLD {fold}', file=of)
         print('----------------------', file=of)
 
+        train_input_ids, train_attention_masks, train_labels = train_set.input_ids[train_ids], \
+                                                               train_set.attention_masks[train_ids], \
+                                                               train_set.labels[train_ids]
+
+        val_input_ids, val_attention_masks, val_labels = train_set.input_ids[test_ids],\
+                                                         train_set.attention_masks[test_ids],\
+                                                         train_set.labels[test_ids]
+
         # init the fold
-        train_subsampler = torch.utils.data.SubsetRandomSampler(train_ids)
-        test_subsampler = torch.utils.data.SubsetRandomSampler(test_ids)
-        trainloader = torch.utils.data.DataLoader(train, batch_size=args['batch_size'], sampler=train_subsampler)
-        testloader = torch.utils.data.DataLoader(train, batch_size=1, sampler=test_subsampler)
+        train_data = TensorDataset(train_input_ids, train_attention_masks, train_labels)
+        val_data = TensorDataset(val_input_ids, val_attention_masks, val_labels)
+        train_loader = DataLoader(train_data, batch_size=args['batch_size'], shuffle=True)
+        val_loader = DataLoader(val_data, batch_size=1, shuffle=True)
 
         # fresh model
         model = torch.load(BASE_MODEL_PATH).to(device)
@@ -65,7 +73,7 @@ def train():
         criterion = torch.nn.BCEWithLogitsLoss().to(device)
         optimizer = transformers.AdamW(model.parameters(), lr=args['lr'], eps=1e-08)
 
-        epoch_iters = len(trainloader)
+        epoch_iters = len(train_loader)
         scheduler = transformers.get_linear_schedule_with_warmup(optimizer, num_warmup_steps=epoch_iters,
                                                                  num_training_steps=epoch_iters * args['epochs'] * 25)
         sigmoid = torch.nn.Sigmoid().to(device)
@@ -73,46 +81,59 @@ def train():
         # metrics
         train_metric = torchmetrics.F1Score().to(device)
 
+        # wandb
+        wandb.init(reinit=True, entity='aitakaitov', config={'fold': fold})
+
         # training, eval
         for epoch_num in range(args['epochs']):
             print(f'EPOCH: {epoch_num + 1}', file=of)
             iteration = 0
             model.train()
-            for train_input, train_label in tqdm.tqdm(trainloader):
-                train_label = train_label.to(device)
-                mask = torch.squeeze(train_input[1].to(device), dim=0)
-                input_id = train_input[0].squeeze(1).to(device)
+            train_loss = 0
+            for batch in train_loader:
+                b_input_ids = batch[0].to(device)
+                b_input_mask = batch[1].to(device)
+                b_labels = batch[2].to(device)
 
-                output = model(input_id, mask).logits
+                output = model(b_input_ids, b_input_mask).logits
 
                 with torch.autocast(device):
-                    batch_loss = criterion(output, train_label)
+                    batch_loss = criterion(output, b_labels)
 
-                train_metric(sigmoid(output), torch.tensor(train_label, dtype=torch.int32))
+                train_metric(sigmoid(output), torch.tensor(b_labels, dtype=torch.int32))
 
                 optimizer.zero_grad()
                 batch_loss.backward()
                 optimizer.step()
                 iteration += 1
 
+                train_loss += torch.sum(batch_loss).item()
+
                 scheduler.step()
 
             print(f'F1 TRAIN: {float(train_metric.compute())}', file=of)
-            train_metric.reset()
             model.eval()
 
-            for val_input, val_label in tqdm.tqdm(testloader):
-                val_label = torch.unsqueeze(val_label.clone().detach(), dim=-1)
-                val_label = val_label.to(device)
-
-                mask = val_input[1].to(device)
-                input_id = val_input[0].squeeze(1).to(device)
+            test_loss = 0
+            for batch in val_loader:
+                b_input_ids = batch[0].to(device)
+                b_input_mask = batch[1].to(device)
+                b_labels = batch[2].to(device)
 
                 with torch.no_grad():
-                    output = model(input_id, mask)
-                    output = sigmoid(output.logits)
+                    output = model(b_input_ids, b_input_mask).logits
+                    batch_loss = criterion(output, b_labels)
+                    output = sigmoid(output)
+
                 predictions_all[epoch_num].append(output.to('cpu'))
-                labels_all[epoch_num].append(val_label.clone().detach().to('cpu').type(torch.IntTensor))
+                labels_all[epoch_num].append(b_labels.clone().detach().to('cpu').type(torch.IntTensor))
+                test_loss += batch_loss.item()
+
+            wandb.log({'f1': float(train_metric.compute()),
+                       'train_loss': train_loss / len(train_loader) * args['batch_size'],
+                       'test_loss': test_loss / len(val_loader)})
+
+            train_metric.reset()
 
         fold += 1
 

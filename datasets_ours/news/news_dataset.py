@@ -5,47 +5,29 @@ import numpy as np
 from torch.nn.functional import one_hot
 
 
-class NewsDataset(torch.utils.data.Dataset):
+class NewsDataset:
 
     def __init__(self, data: str, tokenizer, classes_dict):
         self.labels = []
-        self.texts = []
+        self.input_ids = []
+        self.attention_masks = []
         self.tokenizer = tokenizer
         self.class_dict = classes_dict
-        self.folds = []
-        self.mode = 'train'
 
-        for line in data.split('\n'):
+        for line in data.split('\n')[:100]:
             split_line = line.split('~')
 
             text = split_line[0]
             encoded = tokenizer(text, padding='max_length', max_length=512, truncation=True, return_tensors='pt')
-            self.texts.append(
-                [encoded.data['input_ids'], encoded.data['attention_mask']]
-            )
+            self.input_ids.append(encoded.data['input_ids'])
+            self.attention_masks.append(encoded.data['attention_mask'])
 
             classes = split_line[1:]
             classes = [self.class_dict[clss] for clss in classes]
             label = torch.sum(one_hot(torch.tensor(classes, dtype=torch.long), len(self.class_dict.items())), dim=0)
-            self.labels.append(torch.tensor(label, dtype=torch.float32))
+            self.labels.append(list(label))
 
-    def classes(self):
-        return self.labels
-
-    def __len__(self):
-        return len(self.labels)
-
-    def get_batch_labels(self, idx):
-        # Fetch a batch of labels
-        return np.array(self.labels[idx])
-
-    def get_batch_texts(self, idx):
-        # Fetch a batch of inputs
-        return self.texts[idx]
-
-    def __getitem__(self, idx):
-        batch_texts = self.get_batch_texts(idx)
-        batch_y = self.get_batch_labels(idx)
-
-        return batch_texts, batch_y
+        self.input_ids = torch.cat(self.input_ids, dim=0)
+        self.attention_masks = torch.cat(self.attention_masks, dim=0)
+        self.labels = torch.tensor(self.labels, dtype=torch.float)
 
