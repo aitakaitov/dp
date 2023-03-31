@@ -28,9 +28,8 @@ class Generator:
         return self.model(input_ids, attention_mask)
 
     def generate_LRP(self, input_ids, attention_mask,
-                     index=None, start_layer=11, inputs_embeds_in_input_ids=False, return_logits=True):
-        output = self.model(input_ids=input_ids, attention_mask=attention_mask,
-                            inputs_embeds_in_input_ids=inputs_embeds_in_input_ids, return_logits=return_logits)[0]
+                     index=None, start_layer=11):
+        output = self.model(input_ids=input_ids, attention_mask=attention_mask)[0]
         kwargs = {"alpha": 1}
 
         if index == None:

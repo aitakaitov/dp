@@ -163,15 +163,21 @@ def preprocess_token_attrs(bert_tokens: list, attributions: list):
         # merge the tokens
         processed_document = []
         token = document[0]
-        length = 1
+        xlmr_tokens = token[0] == '▁'
+        token = token[1:] if xlmr_tokens else token
         for i in range(1, len(document)):
-            if '##' in document[i]:
-                length += 1
-                token += document[i][2:]
+            if xlmr_tokens:
+                if document[i][0] == '▁':
+                    processed_document.append(cz_stem(token))
+                    token = document[i][1:]
+                else:
+                    token += document[i]
             else:
-                processed_document.append(cz_stem(token))
-                token = document[i]
-                length = 1
+                if '##' in document[i]:
+                    token += document[i][2:]
+                else:
+                    processed_document.append(cz_stem(token))
+                    token = document[i]
         processed_tokens.append(processed_document)
 
         # merge the attributions for each class
@@ -181,13 +187,22 @@ def preprocess_token_attrs(bert_tokens: list, attributions: list):
         for class_attrs in document_attrs:
             processed_class_attrs = []
             for i in range(1, len(class_attrs)):
-                if '##' in document[i]:
-                    length += 1
-                    attrs_sum += class_attrs[i]
+                if xlmr_tokens:
+                    if document[i][0] == '▁':
+                        processed_class_attrs.append(attrs_sum / length)
+                        attrs_sum = class_attrs[i]
+                        length = 1
+                    else:
+                        length += 1
+                        attrs_sum += class_attrs[i]
                 else:
-                    processed_class_attrs.append(attrs_sum / length)
-                    attrs_sum = class_attrs[i]
-                    length = 1
+                    if '##' in document[i]:
+                        length += 1
+                        attrs_sum += class_attrs[i]
+                    else:
+                        processed_class_attrs.append(attrs_sum / length)
+                        attrs_sum = class_attrs[i]
+                        length = 1
             processed_document_attributions.append(processed_class_attrs)
         processed_attributions.append(processed_document_attributions)
 

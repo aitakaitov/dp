@@ -49,13 +49,6 @@ def merge_matrices(matrices):
     avg = np.mean(matrices_array, axis=0)
     return avg.tolist(), stdev.tolist()
 
-    # for row in range(len(matrices[0])):
-    #     for col in range(len(matrices[0][0])):
-    #         _sum = 0
-    #         for matrix in range(len(matrices)):
-    #             _sum += matrices[matrix][row][col]
-    #         avg = _sum / len(matrices)
-
 
 def save_result(average_matrix, stdev_matrix, header, methods, output_csv_file):
     with open(output_csv_file, 'w+', encoding='utf-8') as f:
@@ -69,6 +62,7 @@ def save_result(average_matrix, stdev_matrix, header, methods, output_csv_file):
 
 def main():
     csv_files = os.listdir(args['dir'])
+    csv_files = [f for f in csv_files if 'csv' in f]
     rows, cols = get_matrix_size(os.path.join(args['dir'], csv_files[0]))
     header, methods = extract_header_and_methods(os.path.join(args['dir'], csv_files[0]))
 

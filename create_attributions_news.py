@@ -6,8 +6,9 @@ import json
 import transformers
 from transformers import AutoTokenizer, AutoConfig
 from attribution_methods_custom import gradient_attributions, ig_attributions, sg_attributions, kernel_shap_attributions
-from models.bert_512 import BertSequenceClassifierNews, ElectraSequenceClassifierNews, RobertaSequenceClassifierNews
+from models.bert_512 import BertForSequenceClassificationChefer
 from BERT_explainability.modules.BERT.ExplanationGenerator import Generator
+from utils.check_relprop import is_relprop_possible
 from utils.list_utils import count_rec
 import utils.baselines
 
@@ -48,7 +49,7 @@ sg_noise_configs = {
 
 sg_x_i_noise_configs = {
     'Czert': 0.05,
-    'MiniLM': 0.25,
+    'MiniLM': 0.15,
     'small-e-czech': 0.15
 }
 
@@ -208,7 +209,7 @@ def create_gradient_attributions(sentences, target_indices_list, target_dir=CERT
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
         attrs_temp = []
         for target_idx in target_indices:
-            attr = gradient_attributions(input_embeds, attention_mask, target_idx, custom_model)
+            attr = gradient_attributions(input_embeds, attention_mask, target_idx, model, logit_fn)
             attr = torch.squeeze(attr)
             attr = attr.mean(dim=1)     # average over embeddings
             attrs_temp.append(format_attrs(attr, sentence))
@@ -223,7 +224,7 @@ def create_gradient_attributions(sentences, target_indices_list, target_dir=CERT
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
         attrs_temp = []
         for target_idx in target_indices:
-            attr = gradient_attributions(input_embeds, attention_mask, target_idx, custom_model, True)
+            attr = gradient_attributions(input_embeds, attention_mask, target_idx, model, logit_fn, True)
             attr = torch.squeeze(attr)
             attr = attr.mean(dim=1)     # average over embeddings
             attrs_temp.append(format_attrs(attr, sentence))
@@ -251,7 +252,7 @@ def _do_ig(sentences, target_indices_list, steps, file, target_dir, baseline_typ
                 baseline = utils.baselines.prepared_baseline(input_embeds, args['baselines_dir']).to(device)
             else:
                 raise RuntimeError(f'Unknown baseline type: {baseline_type}')
-            attr = ig_attributions(input_embeds, attention_mask, target_idx, baseline, custom_model, steps)
+            attr = ig_attributions(input_embeds, attention_mask, target_idx, baseline, model, logit_fn, steps)
             attr = torch.squeeze(attr)
             attr = attr.mean(dim=1)     # average over embeddings
             attrs_temp.append(format_attrs(attr, sentence))
@@ -294,7 +295,7 @@ def _do_sg(sentences, target_indices_list, samples, file, target_dir, noise_leve
         temp_attrs = []
         temp_attrs_x_inputs = []
         for target_idx in target_indices:
-            attr = sg_attributions(inputs_embeds, attention_mask, target_idx, custom_model, samples, noise_level)
+            attr = sg_attributions(inputs_embeds, attention_mask, target_idx, model, logit_fn, samples, noise_level)
 
             if single_pass:
                 attr_x_input = attr.to(device) * inputs_embeds
@@ -319,7 +320,7 @@ def _do_sg(sentences, target_indices_list, samples, file, target_dir, noise_leve
             inputs_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
             temp_attrs_x_inputs = []
             for target_idx in target_indices:
-                attr = sg_attributions(inputs_embeds, attention_mask, target_idx, custom_model, samples, noise_level)
+                attr = sg_attributions(inputs_embeds, attention_mask, target_idx, model, logit_fn, samples, noise_level)
                 attr_x_input = attr.to(device) * inputs_embeds
                 attr_x_input = torch.squeeze(attr_x_input)
                 attr_x_input = attr_x_input.mean(dim=1)     # average over embeddings
@@ -355,7 +356,6 @@ def create_smoothgrad_noise_test_attributions(sentences, target_indices, target_
 
 def _do_kernel_shap(sentences, target_indices_list, model, n_steps, baseline_idx, file, target_dir):
     attrs = []
-    softmax = torch.nn.Softmax(dim=1)
     cls_tensor = torch.tensor([[cls_token_index]]).to(device)
     sep_tensor = torch.tensor([[sep_token_index]]).to(device)
     for sentence, target_indices in zip(sentences, target_indices_list):
@@ -363,7 +363,7 @@ def _do_kernel_shap(sentences, target_indices_list, model, n_steps, baseline_idx
         temp_attrs = []
         for target_idx in target_indices:
             attr = kernel_shap_attributions(input_ids, attention_mask, target_idx, model, baseline_idx,
-                                            cls_tensor, sep_tensor, softmax, n_steps)
+                                            cls_tensor, sep_tensor, torch.nn.Softmax(dim=-1), n_steps)
             attr = torch.squeeze(attr)  # no averaging as the attributions are w.r.t. input ids
             temp_attrs.append(format_attrs(attr, sentence))
 
@@ -428,7 +428,7 @@ def create_relprop_attributions(sentences, target_indices_list, target_dir=CERTA
 #   -----------------------------------------------------------------------------------------------
 
 
-def main(custom_model):
+def main(model):
     documents, labels = get_data()
 
     # lists for certain predictions
@@ -453,7 +453,7 @@ def main(custom_model):
 
         # first classify the sample
         input_embeds, attention_mask = prepare_embeds_and_att_mask(document)
-        res = custom_model(inputs_embeds=input_embeds, attention_mask=attention_mask, inputs_embeds_in_input_ids=False)
+        res = logit_fn(model(inputs_embeds=input_embeds, attention_mask=attention_mask).logits)
         res = list(torch.squeeze(res))
 
         # check which labels we have predicted correctly
@@ -489,40 +489,42 @@ def main(custom_model):
     with open(os.path.join(args['output_dir'], UNSURE_DIR, 'target_indices.json'), 'w+', encoding='utf-8') as f:
         f.write(json.dumps(target_indices_unsure))
 
-    do_relprop = any(['Bert' in arch for arch in custom_model.config.architectures])
-
     if args['smoothgrad_noise_test']:
         create_smoothgrad_noise_test_attributions(valid_documents_certain, target_indices_certain)
     elif args['ig_baseline_test']:
         create_ig_baseline_test_attributions(valid_documents_certain, target_indices_certain)
     elif args['ks_baseline_test']:
         # Use the HF model for captum
-        custom_model.to('cpu')
-        del custom_model
-        hf_model = transformers.AutoModelForSequenceClassification.from_pretrained(args['model_path']).to(device)
-        create_kernel_shap_baseline_test_attributions(valid_documents_certain, target_indices_certain, hf_model)
+        if isinstance(model, BertForSequenceClassificationChefer):
+            del model
+            hf_model = transformers.AutoModelForSequenceClassification.from_pretrained(args['model_path']).to(device)
+            create_kernel_shap_baseline_test_attributions(valid_documents_certain, target_indices_certain, hf_model)
+        else:
+            create_kernel_shap_baseline_test_attributions(valid_documents_certain, target_indices_certain, model)
     else:
-        create_gradient_attributions(valid_documents_certain, target_indices_certain)
-        create_smoothgrad_attributions(valid_documents_certain, target_indices_certain)
-        create_ig_attributions(valid_documents_certain, target_indices_certain)
+        #create_gradient_attributions(valid_documents_certain, target_indices_certain)
+        #create_smoothgrad_attributions(valid_documents_certain, target_indices_certain)
+        #create_ig_attributions(valid_documents_certain, target_indices_certain)
 
-        create_gradient_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
-        create_smoothgrad_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
-        create_ig_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+        #create_gradient_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+        #create_smoothgrad_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+        #create_ig_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
 
-        if do_relprop:
+        if is_relprop_possible(model):
             create_relprop_attributions(valid_documents_certain, target_indices_certain)
             create_relprop_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+        else:
+            method_file_dict.pop('relprop')
 
         # use the HF model for captum
-        custom_model.to('cpu')
-        del custom_model
-        hf_model = transformers.AutoModelForSequenceClassification.from_pretrained(args['model_path']).to(device)
-        create_kernel_shap_attributions(valid_documents_certain, target_indices_certain, hf_model)
-        create_kernel_shap_attributions(valid_documents_unsure, target_indices_unsure, hf_model, UNSURE_DIR)
-
-    if not do_relprop and 'relprop' in method_file_dict.keys():
-        method_file_dict.pop('relprop')
+        if isinstance(model, BertForSequenceClassificationChefer):
+            del model
+            hf_model = transformers.AutoModelForSequenceClassification.from_pretrained(args['model_path']).to(device)
+            create_kernel_shap_attributions(valid_documents_certain, target_indices_certain, hf_model)
+            create_kernel_shap_attributions(valid_documents_unsure, target_indices_unsure, hf_model, UNSURE_DIR)
+        else:
+            create_kernel_shap_attributions(valid_documents_certain, target_indices_certain, model)
+            create_kernel_shap_attributions(valid_documents_unsure, target_indices_unsure, model, UNSURE_DIR)
 
     with open(os.path.join(args['output_dir'], 'method_file_dict.json'), 'w+', encoding='utf-8') as f:
         f.write(json.dumps(method_file_dict))
@@ -559,16 +561,16 @@ if __name__ == '__main__':
 
     if any(['Electra' in arch for arch in config.architectures]):
         tokenizer = AutoTokenizer.from_pretrained(args['model_path'])
-        custom_model = ElectraSequenceClassifierNews.from_pretrained(args['model_path'])
-        embeddings = custom_model.electra.base_model.embeddings.word_embeddings.weight.data
+        model = transformers.ElectraForSequenceClassification.from_pretrained(args['model_path'])
+        embeddings = model.electra.base_model.embeddings.word_embeddings.weight.data
     elif any(['Bert' in arch for arch in config.architectures]):
         tokenizer = AutoTokenizer.from_pretrained(args['model_path'])
-        custom_model = BertSequenceClassifierNews.from_pretrained(args['model_path'])
-        embeddings = custom_model.bert.base_model.embeddings.word_embeddings.weight.data
+        model = BertForSequenceClassificationChefer.from_pretrained(args['model_path'])
+        embeddings = model.bert.base_model.embeddings.word_embeddings.weight.data
     elif any(['Roberta' in arch for arch in config.architectures]):
-        tokenizer = AutoTokenizer.from_pretrained('xlm-roberta-large')#args['model_path'])
-        custom_model = RobertaSequenceClassifierNews.from_pretrained(args['model_path'])
-        embeddings = custom_model.roberta.base_model.embeddings.word_embeddings.weight.data
+        tokenizer = AutoTokenizer.from_pretrained(args['model_path'])
+        model = transformers.XLMRobertaForSequenceClassification.from_pretrained(args['model_path'])
+        embeddings = model.roberta.base_model.embeddings.word_embeddings.weight.data
     else:
         raise RuntimeError(f'Architectures {config.architectures} not supported')
 
@@ -579,10 +581,12 @@ if __name__ == '__main__':
     mask_token_index = tokenizer.mask_token_id
 
     embeddings = embeddings.to(device)
-    custom_model = custom_model.to(device)
+    model = model.to(device)
 
-    custom_model.eval()
-    relprop_explainer = Generator(custom_model)
+    model.eval()
+    relprop_explainer = Generator(model)
+
+    logit_fn = torch.nn.Sigmoid()
 
     if args['smoothgrad_noise_test']:
         prepare_noise_test()
@@ -591,4 +595,4 @@ if __name__ == '__main__':
     elif args['ks_baseline_test']:
         prepare_ks_baseline_test()
 
-    main(custom_model)
+    main(model)

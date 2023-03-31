@@ -27,6 +27,8 @@ import numpy as np
 import datasets
 from datasets import load_dataset, load_metric
 
+import time
+
 import transformers
 from transformers import (
     AutoConfig,
@@ -46,7 +48,6 @@ from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
 
 import wandb
-wandb.init(project='dp', entity='aitakaitov')
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -187,6 +188,17 @@ class ModelArguments:
             "with private models)."
         },
     )
+    freeze_first: int = field(
+        default=0,
+        metadata={"help": ""}
+    )
+
+
+def freeze_first_n(model, n):
+    for i in range(n):
+        for name, param in model.named_parameters():
+            if name.startswith(f'bert.encoder.layer.{i}.'):
+                param.requires_grad = False
 
 
 def main():
@@ -201,6 +213,8 @@ def main():
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+
+    wandb.init(project='dp', entity='aitakaitov', tags=[f'freeze_first_{model_args.freeze_first}'])
 
     # Setup logging
     logging.basicConfig(
@@ -338,6 +352,8 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
+
+    freeze_first_n(model, model_args.freeze_first)
 
     # Preprocessing the raw_datasets
     if data_args.task_name is not None:

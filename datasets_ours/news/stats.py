@@ -38,6 +38,7 @@ def load_pmi_values():
 def filter(data, min_pmi=1, stem=True, no_phrases=True):
     data_by_clss = {}
     kw_by_clss = {}
+    lengths = [0 for _ in range(0, 6)]
     for sample in data:
         pmi = sample['pmi']
         kw = sample['kw']
@@ -46,7 +47,9 @@ def filter(data, min_pmi=1, stem=True, no_phrases=True):
             continue
         if no_phrases:
             if len(kw.split()) > 1:
+                lengths[len(kw.split())] += 1
                 continue
+
         if stem:
             kw = cz_stem(kw)
 
@@ -55,10 +58,13 @@ def filter(data, min_pmi=1, stem=True, no_phrases=True):
                 continue
             kw_by_clss[clss].append(kw)
             data_by_clss[clss].append({'kw': kw, 'pmi': pmi, 'clss': clss, 'joined_count': sample['joined_count']})
+            lengths[0] += 1
         else:
             data_by_clss[clss] = [{'kw': kw, 'pmi': pmi, 'clss': clss, 'joined_count': sample['joined_count']}]
             kw_by_clss[clss] = [kw]
+            lengths[0] += 1
 
+    print(lengths)
     return data_by_clss
 
 
@@ -98,8 +104,9 @@ def get_pmi_stats_from_clss_dict(data):
     Ps = list(range(5, 100, 5))
     percentiles = [np.percentile(values, P) for P in Ps]
 
+    print(f'percentile;pmi')
     for i in range(len(percentiles)):
-        print(f'Percentile: {Ps[i]}; Value: {percentiles[i]}')
+        print(f'{Ps[i]};{percentiles[i]}')
 
     print()
 
@@ -111,8 +118,9 @@ def get_pmi_stats_from_unfiltered(data):
     Ps = list(range(5, 100, 5))
     percentiles = [np.percentile(values, P) for P in Ps]
 
+    print(f'percentile;pmi')
     for i in range(len(percentiles)):
-        print(f'Percentile: {Ps[i]}; Value: {percentiles[i]}')
+        print(f'{Ps[i]};{percentiles[i]}')
 
     print()
 
@@ -158,7 +166,7 @@ def get_occurrence_stats(data, stemmed=True):
         keywords = class_keywords[clss]
 
         for text in texts:
-            if len(text) > 512:
+            if len(text) > 512 or len(text) < 30:
                 continue
 
             present = [1 for kw in keywords if kw in text]
@@ -170,11 +178,17 @@ def get_occurrence_stats(data, stemmed=True):
 
             per_class_occurrences[clss] += len(present)
 
+
     print(f'Number of keyword occurrences per class:')
+    print(f'Average: {sum(per_class_occurrences.values())/len(per_class_occurrences.values())}')
     for clss, count in dict(sorted(per_class_occurrences.items(), key=lambda item: item[1])).items():
         print(f'Class: {clss}; Count: {count}')
     print()
+
     print(f'Number of documents with keyword occurrences:')
+    t = [a * b for a,b in occurence_counts.items()]
+    print(f'Average: {sum(t) / sum(occurence_counts.values())}')
+    print(f'Sum: {sum(occurence_counts.values())}')
     for occ, docs in dict(sorted(occurence_counts.items(), key=lambda item: item[0])).items():
         print(f'Occurences: {occ}; Document count: {docs}')
 
@@ -182,7 +196,7 @@ def get_occurrence_stats(data, stemmed=True):
 
 def main():
     data = load_pmi_values()
-    filtered = filter(data, min_pmi=5, stem=True)
+    filtered = filter(data, min_pmi=4.0, stem=True)
 
     # get percentiles of PMI on unfiltered data
     get_pmi_stats_from_unfiltered(data)

@@ -211,7 +211,7 @@ def scale_shift_attrs(attributions: list):
         _max = max([abs(x) for x in sentence_attrs])
         if _max != 0:
             sentence_attrs = np.array(sentence_attrs) / _max / 2
-        scaled_attrs.append(list(sentence_attrs))
+        scaled_attrs.append(list(np.abs(sentence_attrs)))           #### TODO DOOOO
 
     return scaled_attrs
 
@@ -226,7 +226,7 @@ def scale_sst_attrs(sst_attrs: list):
         _max = max([abs(x) for x in sentence_attrs])
         if _max != 0:
             sentence_attrs = sentence_attrs / _max / 2
-        scaled_attrs.append(list(sentence_attrs))
+        scaled_attrs.append(list(np.abs(sentence_attrs)))               #### TODO DOOOOO
 
     return scaled_attrs
 
