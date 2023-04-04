@@ -51,11 +51,11 @@ def get_method_file_dict():
 
 
 def get_tokens():
-    return load_json(str(os.path.join(args['attrs_dir'], args['pred_type'], 'bert_tokens.json')))
+    return load_json(str(os.path.join(args['attrs_dir'], 'bert_tokens.json')))
 
 
 def get_target_indices():
-    return load_json(str(os.path.join(args['attrs_dir'], args['pred_type'], 'target_indices.json')))
+    return load_json(str(os.path.join(args['attrs_dir'], 'target_indices.json')))
 
 
 def get_classes():
@@ -138,7 +138,7 @@ def rec_remove_neg(values):
 def generate_random_attrs(method_file_dict):
     # choose the first attrs file to get the dimensions of the attributions
     method = method_file_dict[list(method_file_dict.keys())[0]]
-    attrs = load_json(str(os.path.join(args['attrs_dir'], args['pred_type'], method)))
+    attrs = load_json(str(os.path.join(args['attrs_dir'], method)))
     random_attrs = []
 
     for sample in attrs:
@@ -149,7 +149,7 @@ def generate_random_attrs(method_file_dict):
             sample_random.append(r.tolist())
         random_attrs.append(sample_random)
 
-    with open(os.path.join(args['attrs_dir'], args['pred_type'], 'random.json'), 'w+', encoding='utf-8') as f:
+    with open(os.path.join(args['attrs_dir'], 'random.json'), 'w+', encoding='utf-8') as f:
         f.write(json.dumps(random_attrs))
 
     method_file_dict['random'] = 'random.json'
@@ -329,7 +329,7 @@ def main():
     # process attributions for each method
     for method, file in method_file_dict.items():
         try:
-            attrs = load_json(os.path.join(args['attrs_dir'], args['pred_type'], file))
+            attrs = load_json(os.path.join(args['attrs_dir'], file))
         except OSError:
             print(f'JSON file for method {method} not found, skipping')
             continue
@@ -347,7 +347,6 @@ if __name__ == '__main__':
     parser.add_argument('--output_file', default='metrics.csv', help='File to write the results to')
     parser.add_argument('--positive_only', default=True,
                         help='If True, negative attributions are zeroed, else Pos/Neg attributions')
-    parser.add_argument('--pred_type', required=False, default='certain', help='One of [certain, unsure]')
 
     # 2x15 -- top15 metric would return 1.0 for 15 word documents,
     # doubling the length as a minimum is an expert decision

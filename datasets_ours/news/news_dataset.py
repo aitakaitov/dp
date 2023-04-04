@@ -14,7 +14,7 @@ class NewsDataset:
         self.tokenizer = tokenizer
         self.class_dict = classes_dict
 
-        for line in data.split('\n')[:100]:
+        for line in data.split('\n'):
             split_line = line.split('~')
 
             text = split_line[0]
@@ -30,4 +30,10 @@ class NewsDataset:
         self.input_ids = torch.cat(self.input_ids, dim=0)
         self.attention_masks = torch.cat(self.attention_masks, dim=0)
         self.labels = torch.tensor(self.labels, dtype=torch.float)
+
+    def __len__(self):
+        return len(self.input_ids)
+
+    def __getitem__(self, item):
+        return (self.input_ids[item], torch.unsqueeze(self.attention_masks[item], dim=0)), self.labels[item]
 

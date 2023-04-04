@@ -20,11 +20,6 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 # How far from 0.5 we can be for the prediction to be uncertain
 UNSURE_PREDICTION_DELTA = 0.1
 
-# directory for certain and correct predictions
-CERTAIN_DIR = 'certain'
-# directory for correct but uncertain prediction
-UNSURE_DIR = 'unsure'
-
 method_file_dict = {
     'grads': 'gradient_attrs.json',
     'grads_x_inputs':  'gradients_x_inputs_attrs.json',
@@ -107,8 +102,6 @@ def get_ks_baseline(model_path):
 def create_dirs():
     try:
         os.mkdir(args['output_dir'])
-        os.mkdir(os.path.join(args['output_dir'], CERTAIN_DIR))
-        os.mkdir(os.path.join(args['output_dir'], UNSURE_DIR))
     except OSError:
         print(f'A directory already exists, proceeding')
 
@@ -225,7 +218,7 @@ def prepare_input_ids_and_attention_mask(sentence, add_special_tokens=True):
 
 #   -----------------------------------------------------------------------------------------------
 
-def _do_kernel_shap(sentences, target_indices, hf_model, n_steps, baseline_idx, file, target_dir):
+def _do_kernel_shap(sentences, target_indices, hf_model, n_steps, baseline_idx, file):
     attrs = []
     cls_tensor = torch.tensor([[cls_token_index]]).to(device)
     sep_tensor = torch.tensor([[sep_token_index]]).to(device)
@@ -236,11 +229,11 @@ def _do_kernel_shap(sentences, target_indices, hf_model, n_steps, baseline_idx, 
         attr = torch.squeeze(attr)  # no averaging as the attributions are w.r.t. input ids
         attrs.append(format_attrs(attr, sentence))
 
-    with open(str(os.path.join(args['output_dir'], target_dir, method_file_dict[file])), 'w+', encoding='utf-8') as f:
+    with open(str(os.path.join(args['output_dir'], method_file_dict[file])), 'w+', encoding='utf-8') as f:
         f.write(json.dumps(attrs))
 
 
-def create_kernel_shap_attributions(sentences, target_indices, hf_model, target_dir=CERTAIN_DIR):
+def create_kernel_shap_attributions(sentences, target_indices, hf_model):
     """
     Generates KernelShap attributions
     :param sentences:
@@ -259,18 +252,18 @@ def create_kernel_shap_attributions(sentences, target_indices, hf_model, target_
     else:
         raise RuntimeError(f'Unknown KS baseline {baseline_type}')
 
-    _do_kernel_shap(sentences, target_indices, hf_model, 100, baseline, 'ks_100', target_dir)
-    _do_kernel_shap(sentences, target_indices, hf_model, 200, baseline, 'ks_200', target_dir)
-    _do_kernel_shap(sentences, target_indices, hf_model, 500, baseline, 'ks_500', target_dir)
+    _do_kernel_shap(sentences, target_indices, hf_model, 100, baseline, 'ks_100')
+    _do_kernel_shap(sentences, target_indices, hf_model, 200, baseline, 'ks_200')
+    _do_kernel_shap(sentences, target_indices, hf_model, 500, baseline, 'ks_500')
 
 
-def create_kernel_shap_baseline_test_attributions(sentences, target_indices, hf_model, target_dir=CERTAIN_DIR):
-    _do_kernel_shap(sentences, target_indices, hf_model, 200, pad_token_index, 'ks_200_pad', target_dir)
-    _do_kernel_shap(sentences, target_indices, hf_model, 200, unk_token_index, 'ks_200_unk', target_dir)
-    _do_kernel_shap(sentences, target_indices, hf_model, 200, mask_token_index, 'ks_200_mask', target_dir)
+def create_kernel_shap_baseline_test_attributions(sentences, target_indices, hf_model):
+    _do_kernel_shap(sentences, target_indices, hf_model, 200, pad_token_index, 'ks_200_pad')
+    _do_kernel_shap(sentences, target_indices, hf_model, 200, unk_token_index, 'ks_200_unk')
+    _do_kernel_shap(sentences, target_indices, hf_model, 200, mask_token_index, 'ks_200_mask')
 
 
-def create_gradient_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
+def create_gradient_attributions(sentences, target_indices):
     """
     Generates gradient and gradient x input attributions
     :param sentences:
@@ -286,7 +279,7 @@ def create_gradient_attributions(sentences, target_indices, target_dir=CERTAIN_D
         attr = attr.mean(dim=1)         # average over the embedding attributions
         attrs.append(format_attrs(attr, sentence))
 
-    with open(str(os.path.join(args['output_dir'], target_dir, method_file_dict['grads'])), 'w+', encoding='utf-8') as f:
+    with open(str(os.path.join(args['output_dir'], method_file_dict['grads'])), 'w+', encoding='utf-8') as f:
         f.write(json.dumps(attrs))
 
     attrs = []
@@ -297,19 +290,17 @@ def create_gradient_attributions(sentences, target_indices, target_dir=CERTAIN_D
         attr = attr.mean(dim=1)         # average over the embedding attributions
         attrs.append(format_attrs(attr, sentence))
 
-    with open(str(os.path.join(args['output_dir'], target_dir, method_file_dict['grads_x_inputs'])), 'w+', encoding='utf-8') as f:
+    with open(str(os.path.join(args['output_dir'], method_file_dict['grads_x_inputs'])), 'w+', encoding='utf-8') as f:
         f.write(json.dumps(attrs))
 
 
-def _do_ig(sentences, target_indices, steps, file, target_dir, baseline_type=None):
+def _do_ig(sentences, target_indices, steps, file, baseline_type=None):
     """
     Generates integrated gradients attributions given the configuration
     """
     average_emb = embeddings.mean(dim=0)
 
     attrs = []
-    deltas = []
-    percs = []
     for sentence, target_idx in zip(sentences, target_indices):
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
         if baseline_type == 'avg':
@@ -329,11 +320,11 @@ def _do_ig(sentences, target_indices, steps, file, target_dir, baseline_type=Non
         attr = attr.mean(dim=1)         # average over the embedding attributions
         attrs.append(format_attrs(attr, sentence))
 
-    with open(str(os.path.join(args['output_dir'], target_dir, method_file_dict[file])), 'w+', encoding='utf-8') as f:
+    with open(str(os.path.join(args['output_dir'], method_file_dict[file])), 'w+', encoding='utf-8') as f:
         f.write(json.dumps(attrs))
 
 
-def create_ig_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
+def create_ig_attributions(sentences, target_indices):
     """
     Generates all the integrated gradient attributions
     :param sentences:
@@ -343,19 +334,19 @@ def create_ig_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
     """
     baseline_type = args['ig_baseline'] if not args['use_prepared_hp'] else get_ig_baseline(args['model_path'])
 
-    _do_ig(sentences, target_indices, 20, 'ig_20', target_dir, baseline_type)
-    _do_ig(sentences, target_indices, 50, 'ig_50', target_dir, baseline_type)
-    _do_ig(sentences, target_indices, 100, 'ig_100', target_dir, baseline_type)
+    _do_ig(sentences, target_indices, 20, 'ig_20', baseline_type)
+    _do_ig(sentences, target_indices, 50, 'ig_50', baseline_type)
+    _do_ig(sentences, target_indices, 100, 'ig_100', baseline_type)
 
 
-def create_ig_baseline_test_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
-    _do_ig(sentences, target_indices, 50, 'ig_50_zero', target_dir, baseline_type='zero')
-    _do_ig(sentences, target_indices, 50, 'ig_50_pad', target_dir, baseline_type='pad')
-    _do_ig(sentences, target_indices, 50, 'ig_50_avg', target_dir, baseline_type='avg')
-    _do_ig(sentences, target_indices, 50, 'ig_50_custom', target_dir, baseline_type='custom')
+def create_ig_baseline_test_attributions(sentences, target_indices):
+    _do_ig(sentences, target_indices, 50, 'ig_50_zero', baseline_type='zero')
+    _do_ig(sentences, target_indices, 50, 'ig_50_pad', baseline_type='pad')
+    _do_ig(sentences, target_indices, 50, 'ig_50_avg', baseline_type='avg')
+    _do_ig(sentences, target_indices, 50, 'ig_50_custom', baseline_type='custom')
 
 
-def _do_sg(sentences, target_indices, samples, file, target_dir, noise_level=None, noise_level_x_i=None):
+def _do_sg(sentences, target_indices, samples, file, noise_level=None, noise_level_x_i=None):
     """
     Generates smoothgrad attributions given the configuration
     :param sentences:
@@ -394,14 +385,14 @@ def _do_sg(sentences, target_indices, samples, file, target_dir, noise_level=Non
             attr_x_input = attr_x_input.mean(dim=1)  # average over the embedding attributions
             attrs_x_inputs.append(format_attrs(attr_x_input, sentence))
 
-    with open(str(os.path.join(args['output_dir'], target_dir, method_file_dict[file])), 'w+', encoding='utf-8') as f:
+    with open(str(os.path.join(args['output_dir'], method_file_dict[file])), 'w+', encoding='utf-8') as f:
         f.write(json.dumps(attrs))
 
-    with open(str(os.path.join(args['output_dir'], target_dir, method_file_dict[file + '_x_inputs'])), 'w+', encoding='utf-8') as f:
+    with open(str(os.path.join(args['output_dir'], method_file_dict[file + '_x_inputs'])), 'w+', encoding='utf-8') as f:
         f.write(json.dumps(attrs_x_inputs))
 
 
-def create_smoothgrad_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
+def create_smoothgrad_attributions(sentences, target_indices):
     """
     Generates all the smoothgrad attributions
     :param sentences:
@@ -412,18 +403,18 @@ def create_smoothgrad_attributions(sentences, target_indices, target_dir=CERTAIN
     sg_noise = args['sg_noise'] if not args['use_prepared_hp'] else get_sg_noise(args['model_path'])
     sg_x_i_noise = args['sg_noise'] if not args['use_prepared_hp'] else get_sg_x_i_noise(args['model_path'])
 
-    _do_sg(sentences, target_indices, 20, 'sg_20', target_dir, sg_noise, sg_x_i_noise)
-    _do_sg(sentences, target_indices, 50, 'sg_50', target_dir, sg_noise, sg_x_i_noise)
-    _do_sg(sentences, target_indices, 100, 'sg_100', target_dir, sg_noise, sg_x_i_noise)
+    _do_sg(sentences, target_indices, 20, 'sg_20', sg_noise, sg_x_i_noise)
+    _do_sg(sentences, target_indices, 50, 'sg_50', sg_noise, sg_x_i_noise)
+    _do_sg(sentences, target_indices, 100, 'sg_100', sg_noise, sg_x_i_noise)
 
 
-def create_smoothgrad_noise_test_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
-    _do_sg(sentences, target_indices, 50, 'sg_50_0.05', target_dir, 0.05, 0.05)
-    _do_sg(sentences, target_indices, 50, 'sg_50_0.15', target_dir, 0.15, 0.15)
-    _do_sg(sentences, target_indices, 50, 'sg_50_0.25', target_dir, 0.25, 0.25)
+def create_smoothgrad_noise_test_attributions(sentences, target_indices):
+    _do_sg(sentences, target_indices, 50, 'sg_50_0.05', 0.05, 0.05)
+    _do_sg(sentences, target_indices, 50, 'sg_50_0.15', 0.15, 0.15)
+    _do_sg(sentences, target_indices, 50, 'sg_50_0.25', 0.25, 0.25)
 
 
-def create_relprop_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
+def create_relprop_attributions(sentences, target_indices):
     """
     Generates Chefer et al. attributions
     :param sentences:
@@ -437,7 +428,7 @@ def create_relprop_attributions(sentences, target_indices, target_dir=CERTAIN_DI
         res = relprop_explainer.generate_LRP(input_ids=input_ids, attention_mask=attention_mask, start_layer=0, index=target_idx)
         attrs.append(format_attrs(res, sentence))   # no averaging as the attributions are w.r.t. input ids
 
-    with open(str(os.path.join(args['output_dir'], target_dir, method_file_dict['relprop'])), 'w+', encoding='utf-8') as f:
+    with open(str(os.path.join(args['output_dir'], method_file_dict['relprop'])), 'w+', encoding='utf-8') as f:
         f.write(json.dumps(attrs))
 
 
@@ -453,12 +444,6 @@ def main(model):
     correct_pred_indices = []
     correct_pred_sentences = []
 
-    # for correct but unsure predictions
-    bert_tokens_unsure = []
-    sst_tokens_unsure = []
-    unsure_pred_indices = []
-    unsure_pred_sentences = []
-
     for sentence, tokens in zip(sentences, tokens):
         # first classify the sample
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
@@ -469,11 +454,7 @@ def main(model):
         if int(round(true_sentiment)) != top_idx:
             continue
         elif (0.5 - UNSURE_PREDICTION_DELTA) < float(res[0, top_idx]) < (0.5 + UNSURE_PREDICTION_DELTA):
-            # if the prediction is uncertain, save it separately
-            unsure_pred_indices.append(top_idx)
-            bert_tokens_unsure.append(tokenizer.tokenize(sentence))
-            sst_tokens_unsure.append(tokens)
-            unsure_pred_sentences.append(sentence)
+            continue
         else:
             # save certain predictions
             correct_pred_indices.append(top_idx)
@@ -482,15 +463,13 @@ def main(model):
             correct_pred_sentences.append(sentence)
 
     # dump the tokens and predictions
-    with open(os.path.join(args['output_dir'], CERTAIN_DIR, 'sst_bert_tokens.json'), 'w+', encoding='utf-8') as f:
+    with open(os.path.join(args['output_dir'], 'sst_bert_tokens.json'), 'w+', encoding='utf-8') as f:
         f.write(json.dumps({'bert_tokens': bert_tokens_correct, 'sst_tokens': sst_tokens_correct}))
-    with open(os.path.join(args['output_dir'], UNSURE_DIR, 'sst_bert_tokens.json'), 'w+', encoding='utf-8') as f:
-        f.write(json.dumps({'bert_tokens': bert_tokens_unsure, 'sst_tokens': sst_tokens_unsure}))
 
     with open(os.path.join(args['output_dir'], 'method_file_dict.json'), 'w+', encoding='utf-8') as f:
         f.write(json.dumps(method_file_dict))
 
-    if args['smoothgrad_noise_test']:
+    if args['sg_noise_test']:
         # special case for testing noise effect on attributions
         create_smoothgrad_noise_test_attributions(correct_pred_sentences, correct_pred_indices)
     elif args['ig_baseline_test']:
@@ -509,14 +488,8 @@ def main(model):
         create_smoothgrad_attributions(correct_pred_sentences, correct_pred_indices)
         create_ig_attributions(correct_pred_sentences, correct_pred_indices)
 
-        # create attributions for the correctly predicted but uncertain
-        create_gradient_attributions(unsure_pred_sentences, unsure_pred_indices, UNSURE_DIR)
-        create_smoothgrad_attributions(unsure_pred_sentences, unsure_pred_indices, UNSURE_DIR)
-        create_ig_attributions(unsure_pred_sentences, unsure_pred_indices, UNSURE_DIR)
-
         if is_relprop_possible(model):
             create_relprop_attributions(correct_pred_sentences, correct_pred_indices)
-            create_relprop_attributions(unsure_pred_sentences, unsure_pred_indices, UNSURE_DIR)
         else:
             method_file_dict.pop('relprop')
 
@@ -527,10 +500,8 @@ def main(model):
             del model
             hf_model = AutoModelForSequenceClassification.from_pretrained(args['model_path']).to(device)
             create_kernel_shap_attributions(correct_pred_sentences, correct_pred_indices, hf_model)
-            create_kernel_shap_attributions(unsure_pred_sentences, unsure_pred_indices, hf_model, UNSURE_DIR)
         else:
             create_kernel_shap_attributions(correct_pred_sentences, correct_pred_indices, model)
-            create_kernel_shap_attributions(unsure_pred_sentences, unsure_pred_indices, model, UNSURE_DIR)
 
 
 def parse_bool(s):
@@ -541,14 +512,14 @@ if __name__ == '__main__':
     # parse args
     parser = argparse.ArgumentParser()
     parser.add_argument('--output_dir', default='output_sst_attrs', help='Attributions output directory')
-    parser.add_argument('--model_path', required=True, help='Trained model - loaded with from_pretrained')
+    parser.add_argument('--model_path', required=True, help='Trained model - loaded with HF from_pretrained')
     parser.add_argument('--baselines_dir', required=True, help='Directory with baseline examples')
-    parser.add_argument('--sg_noise', required=False, type=float, default=0.15, help='The noise level applied to smoothgrad')
+    parser.add_argument('--sg_noise', required=False, type=float, default=0.05, help='The noise level applied to smoothgrad')
     parser.add_argument('--ig_baseline', required=False, default='zero', type=str, help='Integrated Gradients baseline - one of [zero, avg, pad, custom]')
     parser.add_argument('--ks_baseline', required=False, default='pad', type=str, help='KernelShap baseline token - one of [pad, unk, mask]')
     parser.add_argument('--use_prepared_hp', required=False, default=False, type=parse_bool, help='Use predetermined hyperparameters')
     parser.add_argument('--dataset_dir', required=False, type=str, default='datasets_ours/sst', help='The default corresponds to the project root')
-    parser.add_argument('--smoothgrad_noise_test', required=False, default=False, type=parse_bool, help='Perform smoothgrad noise level test')
+    parser.add_argument('--sg_noise_test', required=False, default=False, type=parse_bool, help='Perform smoothgrad noise level test')
     parser.add_argument('--ig_baseline_test', required=False, default=False, type=parse_bool, help='Perform Integrated Gradients baseline test')
     parser.add_argument('--ks_baseline_test', required=False, default=False, type=parse_bool, help='Perform KernelShap baseline test')
     args = vars(parser.parse_args())
@@ -580,7 +551,7 @@ if __name__ == '__main__':
 
     # finish setup and start generating
     create_dirs()
-    if args['smoothgrad_noise_test']:
+    if args['sg_noise_test']:
         prepare_noise_test()
     elif args['ig_baseline_test']:
         prepare_ig_baseline_test()

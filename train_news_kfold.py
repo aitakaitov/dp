@@ -129,9 +129,9 @@ def train():
                 labels_all[epoch_num].append(b_labels.clone().detach().to('cpu').type(torch.IntTensor))
                 test_loss += batch_loss.item()
 
-            wandb.log({'f1': float(train_metric.compute()),
-                       'train_loss': train_loss / len(train_loader),
-                       'test_loss': test_loss / len(val_loader)})
+            #wandb.log({'f1': float(train_metric.compute()),
+            #           'train_loss': train_loss / len(train_loader),
+            #           'test_loss': test_loss / len(val_loader)})
 
             train_metric.reset()
 

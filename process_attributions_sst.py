@@ -1,14 +1,10 @@
 import json
 import os
-
 import numpy as np
-import scipy.stats
 import argparse
 
-np.random.seed(42)
 
-CERTAIN_DIR = 'certain'
-UNSURE_DIR = 'unsure'
+np.random.seed(42)
 
 MINIMAL_TOKEN_COUNT = 10
 
@@ -60,13 +56,13 @@ def get_method_file_dict():
 
 
 def get_tokens():
-    return load_json(os.path.join(args['attrs_dir'], args['pred_type'], 'sst_bert_tokens.json'))
+    return load_json(os.path.join(args['attrs_dir'], 'sst_bert_tokens.json'))
 
 
 def generate_random_attrs(method_file_dict):
     # choose the first attrs file to get the dimensions of the attributions
     method = method_file_dict[list(method_file_dict.keys())[0]]
-    attrs = load_json(os.path.join(args['attrs_dir'], args['pred_type'], method))
+    attrs = load_json(os.path.join(args['attrs_dir'],  method))
     random_attrs = []
 
     for attr in attrs:
@@ -74,7 +70,7 @@ def generate_random_attrs(method_file_dict):
         r = np.random.uniform(-0.5, 0.5, shape)
         random_attrs.append(r.tolist())
 
-    with open(os.path.join(args['attrs_dir'], args['pred_type'], 'random.json'), 'w+', encoding='utf-8') as f:
+    with open(os.path.join(args['attrs_dir'], 'random.json'), 'w+', encoding='utf-8') as f:
         f.write(json.dumps(random_attrs))
 
     method_file_dict['random'] = 'random.json'
@@ -337,7 +333,7 @@ def main():
     output_csv_file.write('method;top1;top3;top5\n')
     # process attributions for each method
     for method, file in method_file_dict.items():
-        attrs = load_json(str(os.path.join(args['attrs_dir'], args['pred_type'], file)))
+        attrs = load_json(str(os.path.join(args['attrs_dir'], file)))
 
         evals = process_method(attrs, sst_attrs, short_sample_indices, sst_bert_tokens, sst_labels)
         output_csv_file.write(f'{method};' +
@@ -351,8 +347,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--attrs_dir', required=True, help='Output directory of the create_attributions_sst script')
     parser.add_argument('--output_file', default='metrics.csv', help='File to write the results to')
-    parser.add_argument('--pred_type', required=False, default='certain', help='One of [certain, unsure]')
     parser.add_argument('--uncased', required=False, default=False, help='Set to True for uncased models')
+    parser.add_argument('--min_word_count', required=False, default=10, type=int, help='The required number of SST '
+                                                                                       'tokens for the sequence to be'
+                                                                                       'a part of the evaluation')
     args = vars(parser.parse_args())
 
     # these models were evaluated by us and are uncased

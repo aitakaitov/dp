@@ -83,6 +83,7 @@ def train():
         torch.save(model, args['output_dir'] + '/model-epoch-' + str(epoch_num + 1))
 
     model.save_pretrained(args['output_dir'])
+    tokenizer.save_pretrained(args['output_dir'])
 
 
 if __name__ == '__main__':
@@ -92,7 +93,7 @@ if __name__ == '__main__':
     parser.add_argument("--model_name", default='UWB-AIR/Czert-B-base-cased', help="Pretrained model path")
     parser.add_argument("--model_file", required=True, type=str)
     parser.add_argument("--batch_size", default=1, help="Batch size", type=int)
-    parser.add_argument("--output_dir", default='kfold-training-output', help="Output directory")
+    parser.add_argument("--output_dir", default='ctdc_training_output', help="Output directory")
     parser.add_argument("--from_tf", default='False', type=str, help="If True, imported model is a TensorFlow model."
                                                                      " Otherwise the imported model is a PyTorch model.")
 
