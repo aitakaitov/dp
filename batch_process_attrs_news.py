@@ -12,20 +12,10 @@ def main():
 
         command = f'python process_attributions_news.py ' \
                   f'--attrs_dir {os.path.join(args["dir"], model_dir)} ' \
-                  f'--output_file {os.path.join(args["dir"], model_dir + "-posneg-metrics.csv")}'
-
-        os.system(command)
-        
-        input()
-
-        command = f'python process_attributions_news.py ' \
-                  f'--attrs_dir {os.path.join(args["dir"], model_dir)} ' \
                   f'--output_file {os.path.join(args["dir"], model_dir + "-pos-metrics.csv")} ' \
-                  f'--positive_only True'
+                  f'--positive_only True --pred_type unsure'
 
         os.system(command)
-        
-        input()
 
 
 if __name__ == '__main__':

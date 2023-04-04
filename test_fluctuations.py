@@ -1,11 +1,11 @@
 import torch
 import transformers
-from models.bert_512 import BertSequenceClassifierSST
-from attribution_methods_custom import __sg_generate_samples, __ig_interpolate_samples, gradient_attributions
+from models.bert_512 import BertForSequenceClassificationChefer
+from attribution_methods_custom import __ig_interpolate_samples, gradient_attributions
 
-model_path = 'bert-base-cased-sst-0'
+model_path = 'bert-base-cased-sst-v2-1'
 
-model = BertSequenceClassifierSST.from_pretrained(model_path)
+model = BertForSequenceClassificationChefer.from_pretrained(model_path)
 tokenizer = transformers.AutoTokenizer.from_pretrained(model_path)
 model.to('cuda')
 model.eval()
@@ -21,13 +21,14 @@ baseline = inputs_embeds - offset
 target = inputs_embeds + offset
 sg_samples = __ig_interpolate_samples(baseline, target, 1000)
 
-grads_target = gradient_attributions(torch.unsqueeze(inputs_embeds, dim=0).to('cuda'), encoded['attention_mask'].to('cuda'), 1, model).to('cpu')
+grads_target = gradient_attributions(torch.unsqueeze(inputs_embeds, dim=0).to('cuda'), encoded['attention_mask'].to('cuda'), 1, model, torch.nn.Softmax(dim=-1)).to('cpu')
 value_target = torch.sum(grads_target[0], dim=1)
 
 
 values = []
 maximums = []
 for sample in sg_samples:
+    continue
     sample = torch.unsqueeze(sample, dim=0).to('cuda')
     grads = gradient_attributions(sample, encoded['attention_mask'].to('cuda'), 1, model).to('cpu')
     grads = torch.sum(grads[0], dim=1)
@@ -46,7 +47,7 @@ ig_samples = __ig_interpolate_samples(baseline, inputs_embeds, 100)
 sums = []
 for sample in ig_samples:
     sample = torch.unsqueeze(sample, dim=0).to('cuda')
-    grads = gradient_attributions(sample, encoded['attention_mask'].to('cuda'), 1, model).to('cpu')
+    grads = gradient_attributions(sample, encoded['attention_mask'].to('cuda'), 1, model, torch.nn.Softmax(dim=-1)).to('cpu')
     sums.append(torch.sum(torch.abs(grads)))
 
 with open('absolute_gradients.csv', 'w+', encoding='utf-8') as f:

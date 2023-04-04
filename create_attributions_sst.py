@@ -317,7 +317,7 @@ def _do_ig(sentences, target_indices, steps, file, target_dir, baseline_type=Non
         elif baseline_type == 'zero':
             baseline = utils.baselines.zero_embedding_baseline(input_embeds)
         elif baseline_type == 'pad':
-            baseline = utils.baselines.pad_baseline(input_embeds, embeddings[103])#embeddings[pad_token_index])
+            baseline = utils.baselines.pad_baseline(input_embeds, embeddings[pad_token_index])
         elif baseline_type == 'custom':
             baseline = utils.baselines.prepared_baseline(input_embeds, args['baselines_dir']).to(device)
         else:
@@ -326,24 +326,9 @@ def _do_ig(sentences, target_indices, steps, file, target_dir, baseline_type=Non
         attr = ig_attributions(input_embeds, attention_mask, target_idx, baseline, model, logit_fn, steps)
         attr = torch.squeeze(attr)
 
-        # temp
-        attr_sum = torch.sum(attr)
-        score_for_baseline = logit_fn(model(inputs_embeds=baseline, attention_mask=attention_mask).logits)
-        score_for_target = logit_fn(model(inputs_embeds=input_embeds, attention_mask=attention_mask).logits)
-        diff_target = score_for_target[0][target_idx] - score_for_baseline[0][target_idx]
-
-        if abs(attr_sum / diff_target) == math.inf or abs(attr_sum - diff_target) == math.inf:
-            continue
-
-        percs.append(float(attr_sum / diff_target))
-        deltas.append(float(attr_sum - diff_target))
-        # temp
-
         attr = attr.mean(dim=1)         # average over the embedding attributions
         attrs.append(format_attrs(attr, sentence))
 
-    print(f'Method: {file} --- Avg perc.: {sum(percs) / len(percs)} --- Avg. delta: {sum(deltas) / len(deltas)} --- Perc std: {torch.std(torch.tensor(percs), dim=0).item()} --- Delta std: {torch.std(torch.tensor(deltas), dim=0).item()}')
-    print(f'{torch.std(torch.tensor(percs), dim=0).item()}')
     with open(str(os.path.join(args['output_dir'], target_dir, method_file_dict[file])), 'w+', encoding='utf-8') as f:
         f.write(json.dumps(attrs))
 
@@ -433,9 +418,9 @@ def create_smoothgrad_attributions(sentences, target_indices, target_dir=CERTAIN
 
 
 def create_smoothgrad_noise_test_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
-    _do_sg(sentences, target_indices, 50, 'sg_50_0.05', target_dir, 0.05)
-    _do_sg(sentences, target_indices, 50, 'sg_50_0.15', target_dir, 0.15)
-    _do_sg(sentences, target_indices, 50, 'sg_50_0.25', target_dir, 0.25)
+    _do_sg(sentences, target_indices, 50, 'sg_50_0.05', target_dir, 0.05, 0.05)
+    _do_sg(sentences, target_indices, 50, 'sg_50_0.15', target_dir, 0.15, 0.15)
+    _do_sg(sentences, target_indices, 50, 'sg_50_0.25', target_dir, 0.25, 0.25)
 
 
 def create_relprop_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
@@ -474,7 +459,7 @@ def main(model):
     unsure_pred_indices = []
     unsure_pred_sentences = []
 
-    for sentence, tokens in zip(sentences[:150] + sentences[:-150], tokens[:150] + tokens[:-150]):
+    for sentence, tokens in zip(sentences, tokens):
         # first classify the sample
         input_embeds, attention_mask = prepare_embeds_and_att_mask(sentence)
         res = torch.nn.functional.softmax(model(inputs_embeds=input_embeds, attention_mask=attention_mask).logits, dim=-1)
@@ -520,33 +505,32 @@ def main(model):
             create_kernel_shap_baseline_test_attributions(correct_pred_sentences, correct_pred_indices, model)
     else:
         # create attributions for the correctly predicted and certain
-        #create_gradient_attributions(correct_pred_sentences, correct_pred_indices)
-        #create_smoothgrad_attributions(correct_pred_sentences, correct_pred_indices)
+        create_gradient_attributions(correct_pred_sentences, correct_pred_indices)
+        create_smoothgrad_attributions(correct_pred_sentences, correct_pred_indices)
         create_ig_attributions(correct_pred_sentences, correct_pred_indices)
 
         # create attributions for the correctly predicted but uncertain
-        #create_gradient_attributions(unsure_pred_sentences, unsure_pred_indices, UNSURE_DIR)
-        #create_smoothgrad_attributions(unsure_pred_sentences, unsure_pred_indices, UNSURE_DIR)
-        #create_ig_attributions(unsure_pred_sentences, unsure_pred_indices, UNSURE_DIR)
+        create_gradient_attributions(unsure_pred_sentences, unsure_pred_indices, UNSURE_DIR)
+        create_smoothgrad_attributions(unsure_pred_sentences, unsure_pred_indices, UNSURE_DIR)
+        create_ig_attributions(unsure_pred_sentences, unsure_pred_indices, UNSURE_DIR)
 
-        #if is_relprop_possible(model):
-        #    create_relprop_attributions(correct_pred_sentences, correct_pred_indices)
-        #    create_relprop_attributions(unsure_pred_sentences, unsure_pred_indices, UNSURE_DIR)
-        #else:
-        #    method_file_dict.pop('relprop')
+        if is_relprop_possible(model):
+            create_relprop_attributions(correct_pred_sentences, correct_pred_indices)
+            create_relprop_attributions(unsure_pred_sentences, unsure_pred_indices, UNSURE_DIR)
+        else:
+            method_file_dict.pop('relprop')
 
         # we need a different model for Captum, potentially - the Chefer implementation registers
         # gradient hooks, and captum uses torch.no_grad(), so we check for Chefer impl. and if needed
         # initialize a new model
-        #if isinstance(model, BertForSequenceClassificationChefer):
-        #    del model
-        #    hf_model = AutoModelForSequenceClassification.from_pretrained(args['model_path']).to(device)
-        #    create_kernel_shap_attributions(correct_pred_sentences, correct_pred_indices, hf_model)
-        #    create_kernel_shap_attributions(unsure_pred_sentences, unsure_pred_indices, hf_model, UNSURE_DIR)
-        #else:
-        #    create_kernel_shap_attributions(correct_pred_sentences, correct_pred_indices, model)
-        #    create_kernel_shap_attributions(unsure_pred_sentences, unsure_pred_indices, model, UNSURE_DIR)
-
+        if isinstance(model, BertForSequenceClassificationChefer):
+            del model
+            hf_model = AutoModelForSequenceClassification.from_pretrained(args['model_path']).to(device)
+            create_kernel_shap_attributions(correct_pred_sentences, correct_pred_indices, hf_model)
+            create_kernel_shap_attributions(unsure_pred_sentences, unsure_pred_indices, hf_model, UNSURE_DIR)
+        else:
+            create_kernel_shap_attributions(correct_pred_sentences, correct_pred_indices, model)
+            create_kernel_shap_attributions(unsure_pred_sentences, unsure_pred_indices, model, UNSURE_DIR)
 
 
 def parse_bool(s):

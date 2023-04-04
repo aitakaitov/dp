@@ -1,14 +1,15 @@
 import torch
-from models.bert_512 import BertSequenceClassifierSST
 import os
 import argparse
+
+import transformers
 
 
 def main(args: dict):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     # load model
-    model = BertSequenceClassifierSST.from_pretrained(args['model_folder'], num_labels=2, local_files_only=True)
+    model = transformers.BertForSequenceClassification.from_pretrained(args['model_folder'], local_files_only=True)
     model = model.to(device)
     model.eval()
 
@@ -28,7 +29,7 @@ def main(args: dict):
 
         # use gradients to modify the input embeddings
         lr = args['lr']
-        output = model(baseline, attention_mask=attention_mask)[:, 0]
+        output = torch.softmax(model(inputs_embeds=baseline, attention_mask=attention_mask).logits, dim=-1)[:, 0]
         res = float(output)
         while abs(res - 0.5) > args['tolerance']:
             grads = torch.autograd.grad(output, baseline)[0]
@@ -40,16 +41,17 @@ def main(args: dict):
                 baseline = -1 * lr * grads + baseline
 
             # softmax is applied in the model
-            output = model(baseline, attention_mask=attention_mask)[:, 0]
+            output = torch.softmax(model(inputs_embeds=baseline, attention_mask=attention_mask).logits, dim=-1)[:, 0]
             res = float(output)
 
         # save
+        print(f'save {length}')
         torch.save(baseline, args['output_dir'] + '/' + f'{length}.pt')
 
 
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
-    argparser.add_argument('--model_folder', type=str, required=True, help='Has to be a BertForSequenceClassification')
+    argparser.add_argument('--model_folder', type=str, required=True)
     argparser.add_argument('--output_dir', type=str, required=True)
     argparser.add_argument('--start', type=int, default=1, required=False, help='Starting length')
     argparser.add_argument('--lr', type=float, default=0.5, required=False, help='Learning rate')

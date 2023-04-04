@@ -214,8 +214,6 @@ def main():
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    wandb.init(project='dp', entity='aitakaitov', tags=[f'freeze_first_{model_args.freeze_first}'])
-
     # Setup logging
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
@@ -253,6 +251,7 @@ def main():
             )
 
     # Set seed before initializing model.
+    training_args.seed = training_args.seed if training_args.seed != -1 else random.randint(0, 1_000_000)
     set_seed(training_args.seed)
 
     # Get the datasets: you can either provide your own CSV/JSON training and evaluation files (see below)

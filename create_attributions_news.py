@@ -9,7 +9,6 @@ from attribution_methods_custom import gradient_attributions, ig_attributions, s
 from models.bert_512 import BertForSequenceClassificationChefer
 from BERT_explainability.modules.BERT.ExplanationGenerator import Generator
 from utils.check_relprop import is_relprop_possible
-from utils.list_utils import count_rec
 import utils.baselines
 
 import os
@@ -349,9 +348,9 @@ def create_smoothgrad_attributions(sentences, target_indices, target_dir=CERTAIN
 
 
 def create_smoothgrad_noise_test_attributions(sentences, target_indices, target_dir=CERTAIN_DIR):
-    _do_sg(sentences, target_indices, 50, 'sg_50_0.05', target_dir, 0.05)
-    _do_sg(sentences, target_indices, 50, 'sg_50_0.15', target_dir, 0.15)
-    _do_sg(sentences, target_indices, 50, 'sg_50_0.25', target_dir, 0.25)
+    _do_sg(sentences, target_indices, 50, 'sg_50_0.05', target_dir, 0.05, 0.05)
+    _do_sg(sentences, target_indices, 50, 'sg_50_0.15', target_dir, 0.15, 0.15)
+    _do_sg(sentences, target_indices, 50, 'sg_50_0.25', target_dir, 0.25, 0.25)
 
 
 def _do_kernel_shap(sentences, target_indices_list, model, n_steps, baseline_idx, file, target_dir):
@@ -444,7 +443,7 @@ def main(model):
     # list for counting the actually valid labels
     labels_short_enough = []
 
-    for document, label in zip(documents[:20], labels[:20]):
+    for document, label in zip(documents, labels):
         # check the length - no longer than 512 tokens
         if len(tokenizer.tokenize(document)) + 2 > 512:
             continue
@@ -502,13 +501,13 @@ def main(model):
         else:
             create_kernel_shap_baseline_test_attributions(valid_documents_certain, target_indices_certain, model)
     else:
-        #create_gradient_attributions(valid_documents_certain, target_indices_certain)
-        #create_smoothgrad_attributions(valid_documents_certain, target_indices_certain)
-        #create_ig_attributions(valid_documents_certain, target_indices_certain)
+        create_gradient_attributions(valid_documents_certain, target_indices_certain)
+        create_smoothgrad_attributions(valid_documents_certain, target_indices_certain)
+        create_ig_attributions(valid_documents_certain, target_indices_certain)
 
-        #create_gradient_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
-        #create_smoothgrad_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
-        #create_ig_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+        create_gradient_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+        create_smoothgrad_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
+        create_ig_attributions(valid_documents_unsure, target_indices_unsure, UNSURE_DIR)
 
         if is_relprop_possible(model):
             create_relprop_attributions(valid_documents_certain, target_indices_certain)

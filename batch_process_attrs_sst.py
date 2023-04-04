@@ -9,7 +9,7 @@ def main():
             continue
 
         command = f'python process_attributions_sst.py --attrs_dir {os.path.join(args["dir"], file)} ' \
-                  f'--output_file {os.path.join(args["dir"], file + "-certain-posneg-metrics.csv")}'
+                  f'--output_file {os.path.join(args["dir"], file + "-metrics.csv")}'
 
         os.system(command)
 

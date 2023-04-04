@@ -11,7 +11,7 @@ import argparse
 import wandb
 
 import tensorflow as tf
-    
+
 physical_devices = tf.config.list_physical_devices('GPU')
 
 # Disable all GPUS - tensorflow tends to reserve all the GPU memory
@@ -82,7 +82,7 @@ def train():
         train_metric = torchmetrics.F1Score().to(device)
 
         # wandb
-        wandb.init(reinit=True, entity='aitakaitov', config={'fold': fold})
+        # wandb.init(reinit=True, entity='', config={'fold': fold})
 
         # training, eval
         for epoch_num in range(args['epochs']):
@@ -130,7 +130,7 @@ def train():
                 test_loss += batch_loss.item()
 
             wandb.log({'f1': float(train_metric.compute()),
-                       'train_loss': train_loss / len(train_loader) * args['batch_size'],
+                       'train_loss': train_loss / len(train_loader),
                        'test_loss': test_loss / len(val_loader)})
 
             train_metric.reset()
@@ -152,7 +152,7 @@ if __name__ == '__main__':
     parser.add_argument("--epochs", default=4, help="Number of training epochs", type=int)
     parser.add_argument("--lr", default=1e-5, help="Learning rate", type=float)
     parser.add_argument("--model_name", default='UWB-AIR/Czert-B-base-cased', help="Pretrained model path")
-    parser.add_argument("--batch_size", default=1, help="Batch size", type=int)
+    parser.add_argument("--batch_size", default=2, help="Batch size", type=int)
     parser.add_argument("--output_dir", default='kfold-training-output', help="Output directory")
     parser.add_argument("--from_tf", default='False', type=str, help="If True, imported model is a TensorFlow model."
                                                                      " Otherwise the imported model is a PyTorch model.")
