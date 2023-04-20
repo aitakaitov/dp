@@ -6,6 +6,25 @@ import argparse
 import numpy
 
 
+method_name = {"grads": "grads",
+               "grads_x_inputs": "grads x I",
+               "ig_20": "ig 20",
+               "ig_50": "ig 50",
+               "ig_100": "ig 100",
+               "sg_20": "sg 20",
+               "sg_50": "sg 50",
+               "sg_100": "sg 100",
+               "sg_20_x_inputs": "sg 20 x I",
+               "sg_50_x_inputs": "sg 50 x I",
+               "sg_100_x_inputs": "sg 100 x I",
+               "ks_100": "ks 100",
+               "ks_200": "ks 200",
+               "ks_500": "ks 500",
+               "relprop": "Chefer"}
+
+letters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p']
+
+
 def load_json(path):
     with open(path, 'r', encoding='utf-8') as f:
         return json.loads(f.read())
@@ -30,6 +49,14 @@ def get_phrase_sentiments():
     return load_json('datasets_ours/sst/phrase_sentiments.json')
 
 
+def add_html(s):
+    return '<html><body style="font-family: sans-serif; font-size: 0.75em">' + s + "</body></html>"
+
+
+def get_pre(letter):
+    return f'<pre style="display: inline; tab-size: 2;"><b>({letter})&#9;</b></pre>'
+
+
 def visualize_token_attrs(tokens, attrs, positive):
     def get_color(attr):
         if attr > 0:
@@ -47,7 +74,7 @@ def visualize_token_attrs(tokens, attrs, positive):
     # if the classified sample is negative, positive attributions will contribute to the negative sentiment
     # so we flip the signs
     if not positive:
-        attrs = [a * -1 for a in attrs]
+        attrs *= -1
 
     # normalize attributions for visualization.
     bound = max(abs(attrs.max(axis=0)), abs(attrs.min(axis=0)))
@@ -55,33 +82,33 @@ def visualize_token_attrs(tokens, attrs, positive):
     html_text = ""
     for i, tok in enumerate(tokens):
         r, g, b = get_color(attrs[i])
-        html_text += f"<span style='color:rgb({r},{g},{b})'>{tok}</span> "
-    return "<html><body>" + html_text + "</body></html>"
+        html_text += f"<span style='color:rgb({r},{g},{b})'><b>{tok}</b></span> "
+    return html_text
 
 
 def main():
     indices = [int(i) for i in args['indices'].split(',')]
     method_file_dict = load_json(os.path.join(args['attrs_dir'], 'method_file_dict.json'))
-
-    for method, file in method_file_dict.items():
-        attrs_all = load_json(args['attrs_file'])
-
-    attrs_all = load_json(args['attrs_file'])
-    directory, attrs_file = os.path.split(args['attrs_file'])
-    sst_bert_tokens = load_json(os.path.join(directory, 'sst_bert_tokens.json'))
+    sst_bert_tokens = load_json(os.path.join(args['attrs_dir'], 'sst_bert_tokens.json'))
     phrase_sentiments = get_phrase_sentiments()
     labels = get_sst_labels(sst_bert_tokens, phrase_sentiments)
-
-    os.makedirs(os.path.join(args['output_dir'], attrs_file[:-5]))
+    os.makedirs(args['output_dir'])
 
     for idx in indices:
-        tokens = sst_bert_tokens['bert_tokens'][idx]
-        attrs = attrs_all[idx]
-        label = labels[idx]
-        html_text = visualize_token_attrs(tokens, attrs, positive=label == 1)
+        html_text = ''
+        for i, (method, file) in enumerate(method_file_dict.items()):
+            attrs_all = load_json(os.path.join(args['attrs_dir'], file))
 
-        with open(os.path.join(args['output_dir'], attrs_file[:-5], f'{idx}.html'), 'w+', encoding='utf-8') as f:
-            f.write(html_text)
+            tokens = sst_bert_tokens['bert_tokens'][idx]
+            attrs = attrs_all[idx]
+            label = labels[idx]
+            html_temp = visualize_token_attrs(tokens, attrs, positive=label == 1)
+            html_temp = get_pre(letters[i]) + html_temp + '<br /><br />'
+            print(f'{letters[i]}) {method}')
+            html_text += html_temp
+
+        with open(os.path.join(args['output_dir'], f'{idx}.html'), 'w+', encoding='utf-8') as f:
+            f.write(add_html(html_text))
 
 
 if __name__ == '__main__':

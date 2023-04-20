@@ -1,163 +1,248 @@
-# Evaluating Attribution Methods for Explainable NLP with Transformers [TSD 2022]
+# Attribution Methods for Explaining Transformers
 
-## Datasets
+## Install prerequisites and download datasets
 
-Our modified Stanford Sentiment Treebank is in <code>datasets_ours/sst</code>.
-There are three splits - <code>train.csv</code>, <code>test.tsv</code> and <code>dev.csv</code>. The preprocessed original files split into multiple <code>json</code> files.
+This project was tested with Python 3.8.9.
 
-The PMI values for Czech Text Document Corpus are in <code>datasets_ours/news/PMI.csv</code> and are a prt of this repository.
-The CTDC dataset can be downloaded from [here](http://ctdc.kiv.zcu.cz/).
-Then copy the <code>czech_text_document_corpus_v20</code> folder in the archive to <code>datasets_ours/news</code>.
+The packages needed are in the <code>requirements.txt</code> file. They can be installed with 
 
-## Training
-### Stanford Sentiment Treebank
-For SST training we use the HuggingFace [GLUE training script](https://github.com/huggingface/transformers/tree/main/examples/pytorch/text-classification).
-```bash
-python run_glue.py \
-  --model_name_or_path bert-base-cased \
-  --do_train \
-  --do_eval \
-  --max_seq_length 512 \
-  --per_device_train_batch_size 8 \
-  --per_device_eval_batch_size 8 \
-  --learning_rate 1e-5 \
-  --num_train_epochs 4 \
-  --output_dir bert-base-cased-sst \
-  --logging_strategy epoch \
-  --validation_file datasets_ours/sst/dev.csv \
-  --train_file datasets_ours/sst/train.csv \
-  --save_strategy epoch \
-  --evaluation_strategy epoch
-```
-### Czech Text Document Corpus
-There are two stages in CTDC training. In line with the original authors, we first perform kfold cross-validation and then train our models on the entire dataset.
+<code>pip install -r requirements.txt</code>
 
-The kfold cross-validation:
-```bash
-python train_news_kfold.py \
-  --model_name UWB-AIR/Czert-B-base-cased \
-  --epochs 4 \
-  --lr 1e-5 \
-  --batch_size 4 \
-  --output_dir output_kfold \
-  --from_tf True
-```
-
-The training follows the same syntax:
-```bash
-python train_news.py \
-  --model_name UWB-AIR/Czert-B-base-cased \
-  --epochs 4 \
-  --lr 1e-5 \
-  --batch_size 4 \
-  --output_dir Czert-B-base-cased-news \
-  --from_tf True
-```
-
-## Attributions
-
-Later on, when the attributions are evaluated, the evaluation script relies on <b>cased</b> or <b>uncased</b> being present in the directory name
-in order to correctly merge the tokenized text into words. The medium, small and mini models are all uncased. Keep this in mind, as otherwise the script will crash. 
+The datasets are missing. They have to be downloaded and extracted by running the <code>download_and_extract_datasets.py</code>
+script.
 
 ### SST
 
-#### Baselines
-For the SST dataset attributions we need neutral baselines.
-Since this is a binary classification task, we can use gradients w.r.t. embeddings to generate neutral samples.
-This can take a while, so in case the gradients are too slow, random generation can be used.
-The usage is as follows:
-```bash
-python generate_neutral_baselines_sst.py \  # or generate_neutral_baselines_random_sst.py
-  --tokenizer bert-base-cased \
-  --model_path bert-base-cased-sst \  # for example
-  --output_dir baselines_bert-base-cased-sst
+Now that the SST dataset is extracted, it needs to be preprocessed. To do that, run the <code>datasets_ours/sst/prepare.py</code> script from 
+that directory (working dir = <code>datasets_ours/sst</code>).
+It runs the other required scripts using <code>os.system</code> and assumes that Python scripts can be run using the <code>python</code> command.
+Alternatively, you can specify the command, e. g. of you run python using the <code>python3</code> command.
+
+```
+python prepare.py --python_cmd python3 
 ```
 
-The syntax is the same for random generation.
+For completeness, it runs the following scripts in this order:
+* <code>datasets_ours/sst/create_phrase_sentiments.py</code>
+* <code>datasets_ours/sst/create_sentences_tokens.py</code>
+* <code>datasets_ours/sst/create_splits_csv.py</code>
+* <code>datasets_ours/sst/extend_train_set.py</code>
 
-The baselines we have used are available [here](https://drive.google.com/file/d/1264QRfPhWkm7_dx9hmRRXFRykdiTeKRp/view?usp=sharing). 
-The archive contains folders with baseline embeddings for each of the four models we have trained 
-for the SST attributions.
-
-#### Attributions generation
-The script <code>create_attributions_sst.py</code> generates attributions for the SST dataset.
-The usage is as follows:
-```bash
-python create_attributions_sst.py \
-  --baselines_dir baselines_czert \
-  --model_path bert-base-cased-sst \  # for example
-  --output_dir bert-base-cased-sst-attrs 
-```
-
-Be aware that multiple large files (typically in excess of 1GB) are generated.
+Now the SST dataset is ready.
 
 ### CTDC
 
-For CTDC we use a dummy class which is injected into training and serves as a baseline which is neutral to all other classes.
-No baselines need to be generated.
+The CTDC dataset needs to be transformed into a format that can be easily processed. To do this,
+run the following script with <code>datasets_ours/news</code> as a working directory
 
-The script <code>create_attributions_news.py</code> generates attributions for the CTDC dataset.
-Because this process can take a significant amount of time, there is an option to split the computation into different parts that can then run in parallel. See the script help for options.
+* <code>datasets_ours/news/generate_splits.py</code>
 
-The usage is as follows:
-```bash
-python create_attributions_news.py \
-  --model_path Czert-B-base-cased-news \  # for example
-  --output_dir Czert-B-base-cased-news-attrs \
-  --part ig200  # optional, for no split use 'all'
+Now the dataset is ready.
+
+## The SST Pipeline
+
+We need to train a model, (*optional*) generate baselines, generate attributions, and process the attributions. To do this, we need to
+run multiple scripts.
+
+### Training an SST model
+To fine-tune an SST model, we use the <code>run_glue.py</code> script. 
+
+```
+python run_glue.py --model_name_or_path <model> --output_dir sst_model_trained \
+--do_train --do_eval --max_seq_length 128 \
+--per_device_train_batch_size 8 --per_device_eval_batch_size 8
+--learning_rate 1e-5 --num_train_epochs 2 \
+--logging_strategy epoch \
+--validation_file datasets_ours/sst/dev.csv --train_file datasets_ours/sst/train.csv \
+--save_strategy epoch --evaluation_strategy epoch --seed -1
 ```
 
-Be aware that the files generated have sizes in excess of 10GB.
+For the model, we use one of the following
+* <code>bert-base-cased</code>
+* <code>prajjwal1/bert-medium</code>
+* <code>prajjwal1/bert-small</code>
+* <code>prajjwal1/bert-mini</code>
 
-## Evaluation
+### _(Optional) Generate custom baselines_ 
+If we have a fine-tuned model <code>sst_model_trained</code>, we can generate baselines for Integrated Gradients. To
+do this, we use the <code>generate_neutral_baselines_sst.py</code> script.
 
-### SST
+```
+python generate_neutral_baselines_sst.py --model_folder sst_model_trained --output_folder sst_model_trained/baselines
+```
 
-For SST evaluation use the <code>process_attributions_sst.py</code> script:
-```bash
+### Generate attributions
+Now that we have a trained model, and optionally custom baselines, we can generate attributions. To do this, we 
+use the <code>create_attributions_sst.py</code> script. It has many options, some of which are explained below.
+
+* <code>--output_dir</code> - Where to save the attributions
+* <code>--model_path</code> - Which model to evaluate
+* <code>--baselines_dir</code> - Where are the custom baselines (only if we have generated them in the previous step)
+* <code>--use_prepared_hp</code> - If set to True, the script will use the hyperparameters we use in our final tests. This overrides any other options (like --sg_noise). 
+* <code>--sg_noise</code> - Sets the noise_level of SmoothGRAD and SmoothGRAD x Input
+* <code>--ig_baseline</code> - Which baseline to use for Integrated Gradients, one of <code>zero</code>, <code>pad</code>, <code>avg</code>, <code>custom</code> (if we have generated them)
+* <code>--ks_baseline</code> - Which baseline to use for KernelSHAP, one of <code>pad</code>, <code>unk</code>, <code>mask</code>
+* <code>--sg_noise_test</code> - If True, runs the noise test for SmoothGRAD
+* <code>--ig_baseline_test</code> - If True, runs the baseline test for Integrated Gradients (requires --baselines_dir to be specified)
+* <code>--ks_baseline_test</code> - If True, runs the baseline test for KernelSHAP
+
+The <code>--use_prepared_hp</code> can be used to replicate our results.
+
+The script checks if the model passed is a <code>BertForSequenceClassification</code> - if it is, the script loads the model through the Chefer et al. implementation
+to enable the Chefer et al. relprop method to be evaluated. Otherwise, the relprop method is ignored.
+
+
+### Evaluate attributions
+Now that we have the attributions in a folder, e.g. <code>sst_attributions</code> folder, we can evaluate them.
+
+The <code>process_attributions_sst.py</code> script does the evaluation. ***It supports only BERT models with the BERT-style tokenization***. It merges the tokens
+to match SST's word-level annotations. Any other model will not work, and will produce incorrect results.
+
+The usage is as follows
+
+```
 python process_attributions_sst.py \
-  --attrs_dir bert-base-cased-sst-attrs \  # for example
-  --output_file metrics_sst.csv \
-  --absolute True  # True or False, by default False
+--attrs_dir sst_attributions \
+--output_file sst_metrics.csv \
+--uncased False
 ```
 
-### CTDC
+The <code>--uncased</code> is important for the script to work. If the attributions were produced by an uncased model, set
+<code>--uncased True</code>.
 
-For CTDC evaluation use the <code>process_attributions_news.py</code> script:
-```bash
-python process_attributions_sst.py \
-  --attrs_dir Czert-B-base-cased-news-attrs \  # for example
-  --output_file metrics_news.csv \
-  --absolute True  # True or False, by default False
+From the models we use, the following are uncased and need <code>--uncased True</code>
+* <code>prajjwal1/bert-medium</code>
+* <code>prajjwal1/bert-small</code>
+* <code>prajjwal1/bert-mini</code>
+
+This produces a CSV file with the results for each metric and method.
+
+
+## The CTDC Pipeline
+
+We need to perform k-fold cross validation of a model, then train the model on the entire train split, (optional) generate baselines, generate attributions,
+and process the attributions. To do this, we need to run multiple scripts.
+
+### K-Fold evaluation of a CTDC model
+To initialize a model and use cross-validation, use the <code>train_ctdc_kfold.py</code> script. 
+The script creates a <code></code> file with the initialized model so that each trained model has the same 
+classification head. This file is important for the next step, don't delete it.
+
+The model prints the evaluation results into console and contains commented wandb integration code.
+
+```
+python train_ctdc_kfold.py \
+--model_name <model_name> \
+--batch_size 2 \
+--epochs 5 \
+--lr 1e-5 \
+--from_tf False
 ```
 
-## Our models
+Set the <code>--from_tf</code> to <code>True</code> if the model is in the TensorFlow format on HuggingFace. 
+The script automatically detects the <code>UWB-AIR/Czert-B-base-cased</code> model and sets <code>from_tf</code> to 
+<code>True</code>.
 
-### SST
+We use the following models
+* <code>UWB-AIR/Czert-B-base-cased</code>
+* <code>Seznam/small-e-czech</code>
+* <code>nreimers/mMiniLMv2-L6-H384-distilled-from-XLMR-Large</code>
 
-For SST, we have used the following pretrained models from HuggingFace:
-* [bert-base-cased](https://huggingface.co/bert-base-cased)
-* [prajjwal1/bert-medium](https://huggingface.co/prajjwal1/bert-medium)
-* [prajjwal1/bert-small](https://huggingface.co/prajjwal1/bert-small)
-* [prajjwal1/bert-mini](https://huggingface.co/prajjwal1/bert-mini)
+### Train a CTDC model
+When we have a model evaluated with the k-fold cross-validation script, we can train a model based on the 
+<code><model_name>-base</code> file.
 
-Our trained versions are:
-* [bert-base-cased](https://drive.google.com/file/d/10LiYqr8HL3Zhpy-k4izKlLh57ZjPz-w9/view?usp=sharing)
-* [prajjwal1/bert-medium](https://drive.google.com/file/d/1YPwFFUn_Grm6zq18GPmnlRH9dZnfS1_s/view?usp=sharing)
-* [prajjwal1/bert-small](https://drive.google.com/file/d/1v70e0ScMMfIZWyti4aS_ZTvNZEYk8s2M/view?usp=sharing)
-* [prajjwal1/bert-mini](https://drive.google.com/file/d/1tvUx31QC6WAjhdCjy_ZMZ6h_iEnI1REz/view?usp=sharing)
+To do this, use the <code>train_ctdc.py</code> script.
 
-### CTDC
+```
+python train_ctdc.py \
+--model_name <model_name> \
+--model_file <model_name>-base \
+--output_dir ctdc-fine-tuned \
+--batch_size 2 \
+--lr 1e-5 \
+--from_tf False
+```
 
-For CTDC, we have used the following models from HuggingFace:
-* [UWB-AIR/Czert-B-base-cased](https://huggingface.co/UWB-AIR/Czert-B-base-cased)
-* [Seznam/small-e-czech](https://huggingface.co/Seznam/small-e-czech)
+As before, the <code>UWB-AIR/Czert-B-base-cased</code> model is autodetected and <code>from_tf</code> is set appropriately.
+The <code>model_name</code> has to be specified, because we need to a) save the model with <code>save_pretrained</code> and
+b) load the tokenizer.
+The <code>output_dir</code> will contain a pickled model for each training epoch, and a model loadable with <code>AutoModel.from_pretrained</code>.
 
-Our trained versions are:
-* [UWB-AIR/Czert-B-base-cased](https://drive.google.com/file/d/19nGVbkb46XqqMy4Z7f3C881fTw8OgEKq/view?usp=sharing)
-* [Seznam/small-e-czech](https://drive.google.com/file/d/1wdubynicCkcAXr_zZUEODIM6dZOm0OE-/view?usp=sharing)
+### *(Optional) Generate custom baselines*
+To generate custom baselines for Integrated Gradients, use the <code>generate_neutral_baselines_ctdc.py</code> script.
+
+```
+python generate_neutral_baselines_ctdc.py \
+--model_folder ctdc-fine-tuned \
+--output_dir ctdc-fine-tuned/baselines
+```
+
+### Generate attributions
+Now that we have a trained model, and optionally custom baselines, we can generate attributions. To do this, we 
+use the <code>create_attributions_ctdc.py</code> script. It has many options, some of which are explained below.
+
+* <code>--output_dir</code> - Where to save the attributions
+* <code>--model_path</code> - Which model to evaluate
+* <code>--baselines_dir</code> - Where are the custom baselines (only if we have generated them in the previous step)
+* <code>--use_prepared_hp</code> - If set to True, the script will use the hyperparameters we use in our final tests. This overrides any other options (like --sg_noise). 
+* <code>--sg_noise</code> - Sets the noise_level of SmoothGRAD and SmoothGRAD x Input
+* <code>--ig_baseline</code> - Which baseline to use for Integrated Gradients, one of <code>zero</code>, <code>pad</code>, <code>avg</code>, <code>custom</code> (if we have generated them)
+* <code>--ks_baseline</code> - Which baseline to use for KernelSHAP, one of <code>pad</code>, <code>unk</code>, <code>mask</code>
+* <code>--sg_noise_test</code> - If True, runs the noise test for SmoothGRAD
+* <code>--ig_baseline_test</code> - If True, runs the baseline test for Integrated Gradients (requires --baselines_dir to be specified)
+* <code>--ks_baseline_test</code> - If True, runs the baseline test for KernelSHAP
+
+The <code>--use_prepared_hp</code> can be used to replicate our results.
+
+The script checks if the model passed is a <code>BertForSequenceClassification</code> - if it is, the script loads the model through the Chefer et al. implementation
+to enable the Chefer et al. relprop method to be evaluated. Otherwise, the relprop method is ignored.
+
+### Evaluate attributions
+To evaluate the attributions, use the <code>process_attributions_ctdc.py</code> script. Let's say we have the attributions in <code>attributions_ctdc</code> folder.
+
+```
+python process_attributions_ctdc.py \
+--attrs_dir attributions_ctdc \
+--output_file metrics_ctdc.csv 
+```
+
+This runs the script with the default settings, additionally you can specify the minimum PMI for keywords or the minimum word count for documents.
+
+## Creating visualisations
+
+A simple visualisation of an SST sample can be created with the <code>visualize.py</code> script.
+
+```
+python visualize.py \
+--attrs_dir attributions_sst \
+--indices 18,139,1038,1070 \
+--output_dir html_visualisations
+```
+
+The <code>indices</code> are a comma-separated list (no spaces) which index the test split of the SST dataset (as sorted originally).
+The <code>output_dir</code> will contain a <code><index>.html</code> file for each of the indices. This file contains visualisations
+of attributions for all the methods in the <code>attrs_dir</code>. The script prints the letter-method mapping into console, but 
+the visualisation have the following order
+
+* Vanilla Gradients
+* Gradients x Input
+* Integrated Gradients, n=20
+* Integrated Gradients, n=50
+* Integrated Gradients, n=100
+* SmoothGRAD, n=20
+* SmoothGRAD, n=50
+* SmoothGRAD, n=100
+* SmoothGRAD x Input, n=20
+* SmoothGRAD x Input, n=50
+* SmoothGRAD x Input, n=100
+* KernelSHAP, n=100
+* KernelSHAP, n=200
+* KernelSHAP, n=500
+* (*Optional*) Chefer et al.
 
 
-# Notes
+###
 
-We have used the reference implementation from Chefer et al. [Transformer Interpretability Beyond Attention Visualization](https://github.com/hila-chefer/Transformer-Explainability) in order to evaluate their method.
+
+

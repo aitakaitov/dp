@@ -513,7 +513,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--output_dir', default='output_sst_attrs', help='Attributions output directory')
     parser.add_argument('--model_path', required=True, help='Trained model - loaded with HF from_pretrained')
-    parser.add_argument('--baselines_dir', required=True, help='Directory with baseline examples')
+    parser.add_argument('--baselines_dir', required=False, help='Directory with baseline examples')
     parser.add_argument('--sg_noise', required=False, type=float, default=0.05, help='The noise level applied to smoothgrad')
     parser.add_argument('--ig_baseline', required=False, default='zero', type=str, help='Integrated Gradients baseline - one of [zero, avg, pad, custom]')
     parser.add_argument('--ks_baseline', required=False, default='pad', type=str, help='KernelShap baseline token - one of [pad, unk, mask]')

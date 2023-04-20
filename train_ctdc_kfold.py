@@ -153,7 +153,6 @@ if __name__ == '__main__':
     parser.add_argument("--lr", default=1e-5, help="Learning rate", type=float)
     parser.add_argument("--model_name", default='UWB-AIR/Czert-B-base-cased', help="Pretrained model path")
     parser.add_argument("--batch_size", default=2, help="Batch size", type=int)
-    parser.add_argument("--output_dir", default='kfold-training-output', help="Output directory")
     parser.add_argument("--from_tf", default='False', type=str, help="If True, imported model is a TensorFlow model."
                                                                      " Otherwise the imported model is a PyTorch model.")
 
@@ -164,7 +163,7 @@ if __name__ == '__main__':
 
     # Avoid conflicts when saving the base model
     random_number = str(random.randint(0, 1_000_000_000))
-    BASE_MODEL_PATH = args['model_name'].replace('/', '_').replace('\\', '_') + '--' + random_number
+    BASE_MODEL_PATH = args['model_name'].replace('/', '_').replace('\\', '_') + '-base'
 
     classes_dict = get_class_dict()
     model = transformers.AutoModelForSequenceClassification.from_pretrained(args['model_name'],
