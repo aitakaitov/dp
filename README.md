@@ -1,7 +1,6 @@
 # Attribution Methods for Explaining Transformers
 
 ## Install prerequisites and download datasets
-
 This project was tested with Python 3.8.9.
 
 The packages needed are in the <code>requirements.txt</code> file. They can be installed with 
@@ -16,7 +15,7 @@ script.
 Now that the SST dataset is extracted, it needs to be preprocessed. To do that, run the <code>datasets_ours/sst/prepare.py</code> script from 
 that directory (working dir = <code>datasets_ours/sst</code>).
 It runs the other required scripts using <code>os.system</code> and assumes that Python scripts can be run using the <code>python</code> command.
-Alternatively, you can specify the command, e. g. of you run python using the <code>python3</code> command.
+Alternatively, you can specify the command, e.g., if you run python using the <code>python3</code> command.
 
 ```
 python prepare.py --python_cmd python3 
@@ -38,6 +37,12 @@ run the following script with <code>datasets_ours/news</code> as a working direc
 * <code>datasets_ours/news/generate_splits.py</code>
 
 Now the dataset is ready.
+
+
+### Models
+
+Our fine-tuned models can be downloaded from [here](). If you want to replicate our results, you have 
+to download them first. Extract the archive into the root directory of this project.
 
 ## The SST Pipeline
 
@@ -242,7 +247,83 @@ the visualisation have the following order
 * (*Optional*) Chefer et al.
 
 
-###
+## Replication
 
+Our experiments can be replicated. We are assuming you have downloaded the fine-tuned models and downloaded + preprocessed the 
+datasets.
 
+The folder with the fine-tuned models will be referred to as <code>models_ours</code>. 
+It contains two folder - one for each dataset we use. The structure is simple to understand,
+and the folders contain README files with description of the contents.
 
+The structure is as follows:
+
+* <code>sst</code>
+  * <code>base</code>
+    * <code>bert-base-cased-sst-v2-1</code>
+    * <code>...</code>
+    * <code>bert-base-cased-sst-v2-5</code>
+  * <code>base-epochs</code> - a special case for overfitting tests
+  * <code>medium</code>
+    * <code>...</code>
+  * <code>small</code>
+    * <code>...</code>
+  * <code>mini</code>
+    * <code>...</code>
+* <code>ctdc</code>
+  * <code>Czert</code>
+    * <code>Czert-B-base-cased-ctdc-1</code>
+    * <code>...</code>
+    * <code>Czert-B-base-cased-ctdc-5</code>
+  * <code>MiniLM</code>
+    * <code>...</code>
+  * <code>Seznam</code>
+    * <code>...</code>
+
+### Run hyperparameter tests
+In order to see which baseline or noise size works the best, we took first three instances
+of each model (numbers 1, 2, and 3), ran hyperparameter tests on them, and then decided
+which baseline or noise size to use in our final evaluation.
+
+#### SST
+Given a model, let's say a base-size BERT (<code>bert-base-cased</code>), run the following
+script for the first three instances
+
+```
+python create_attributions_sst.py \
+--output_dir attributions_sst_base_[1,2,3] \
+--model_path models_ours/sst/base/bert-base-cased-sst-v2-[1,2,3] \
+--ig_baseline_test True
+```
+
+or replace the <code>--ig_baseline_test</code> 
+with one of <code>[--ks_baseline_test, --sg_noise_test]</code>.
+
+This will generate attributions for the hyperparameter test.
+
+#### CTDC
+Given a model, let's say a Czert (<code>UWB-AIR/Czert-B-base-cased</code>), run the following
+script for the first three instances
+
+```
+python create_attributions_ctdc.py \
+--output_dir attributions_ctdc_czert_[1,2,3] \
+--model_path models_ours/ctdc/Czert/Czert-B-base-cased-ctdc-[1,2,3] \
+--ig_baseline_test True
+```
+
+or replace the <code>--ig_baseline_test</code> 
+with one of <code>[--ks_baseline_test, --sg_noise_test]</code>.
+
+This will generate attributions for the hyperparameter test.
+
+### Generate attributions
+
+To generate the attributions, use the same script as above in the hyperparameters test, but replace the 
+<code>--x_y_test True</code> with <code>--use_prepared_hp True</code>. This will make the script
+use the hyperparameters we chose to use in our final evaluation.
+
+### Evaluate attributions
+
+To evaluate the attributions, use the exact same process as described in the SST or CTDC pipeline sections.
+Only set the <code>--attrs_dir</code> to the folder with your generated attributions.

@@ -58,6 +58,7 @@ def get_pre(letter):
 
 
 def visualize_token_attrs(tokens, attrs, positive):
+    # adapted code from https://github.com/ankurtaly/Integrated-Gradients/blob/master/howto.md
     def get_color(attr):
         if attr > 0:
             r = 128 - int(64 * attr)
